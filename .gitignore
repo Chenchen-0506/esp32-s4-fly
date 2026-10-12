@@ -1,0 +1,31 @@
+# ===== Arduino / PlatformIO 编译产物 =====
+build/
+.pio/
+*.elf
+*.bin
+*.hex
+*.map
+*.ino.bin
+*.ino.hex
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== 系统 =====
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ===== 日志 =====
+*.log
