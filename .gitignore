@@ -29,3 +29,4 @@ desktop.ini
 
 # ===== 日志 =====
 *.log
+`n# 本地编译验证目录`nbuild_verify_*/
