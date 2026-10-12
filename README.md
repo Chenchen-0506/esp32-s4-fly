@@ -31,11 +31,41 @@ esp32 S3/
 M6_full_flight/
 ├── M6_full_flight.ino        # 主程序：setup/loop、状态机、解锁、混控
 └── src/
-    ├── ICM20948.h/.cpp       # 九轴 IMU 驱动 + Mahony 姿态 + 零偏校准
-    ├── BMP280.h/.cpp         # 气压计驱动 + 相对高度
+    ├── ICM20948.h/.cpp       # 九轴 IMU 驱动（SPI）+ Mahony 姿态 + 零偏校准
     ├── SBUS.h/.cpp           # SBUS 接收解析 + 通道
     ├── PID.h/.cpp            # 串级 PID 控制器
     └── Motors.h/.cpp         # 4 路电机 PWM 输出
+```
+
+## 软件依赖
+
+### 开发环境
+
+| 软件 | 版本 | 用途 |
+| --- | --- | --- |
+| Arduino IDE | 2.x（实测 2.3.x） | 主开发环境，打开各工程文件夹直接编译烧录 |
+| ESP32 核心（esp32 by Espressif） | 3.3.x（实测 3.3.11） | Arduino IDE 库管理器安装，提供 `esp32:esp32:esp32s3` 板型 |
+| arduino-cli | 1.5.x | 可选，命令行编译/验证用（Arduino IDE 内置） |
+
+### 板型选择
+
+- **开发板**：`ESP32S3 Dev Module`（FQBN：`esp32:esp32:esp32s3`）
+- **Flash Size**：16MB（N16）
+- **PSRAM**：OPI PSRAM（R8）
+
+### 第三方库
+
+**零第三方依赖**。全部代码仅使用 ESP32 核心自带的库：
+
+- `<Arduino.h>`、`<SPI.h>`、`<Wire.h>`、`<math.h>`
+
+IMU（ICM-20948）、SBUS、PID、电机驱动全部为自研代码，位于 `M6_full_flight/src/`，clone 仓库后无需安装任何额外库即可编译。
+
+### 命令行编译（可选）
+
+```bash
+# 以 M6 为例（arduino-cli 需已配置 esp32 核心）
+arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
 ```
 
 ## 阶段回档（Git 规范）
