@@ -32,6 +32,7 @@ M6_full_flight/
 ├── M6_full_flight.ino        # 主程序：setup/loop、状态机、解锁、混控
 └── src/
     ├── ICM20948.h/.cpp       # 九轴 IMU 驱动（SPI）+ Mahony 姿态 + 零偏校准
+    ├── BMP280.h/.cpp         # 气压计驱动（I2C）+ 相对高度
     ├── SBUS.h/.cpp           # SBUS 接收解析 + 通道
     ├── PID.h/.cpp            # 串级 PID 控制器
     └── Motors.h/.cpp         # 4 路电机 PWM 输出
@@ -59,7 +60,7 @@ M6_full_flight/
 
 - `<Arduino.h>`、`<SPI.h>`、`<Wire.h>`、`<math.h>`
 
-IMU（ICM-20948）、SBUS、PID、电机驱动全部为自研代码，位于 `M6_full_flight/src/`，clone 仓库后无需安装任何额外库即可编译。
+IMU（ICM-20948）、气压计（BMP280）、SBUS、PID、电机驱动全部为自研代码，位于 `M6_full_flight/src/`，clone 仓库后无需安装任何额外库即可编译。
 
 ### 命令行编译（可选）
 

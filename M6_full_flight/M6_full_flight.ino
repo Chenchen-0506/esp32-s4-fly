@@ -44,6 +44,7 @@
 #include "src/SBUS.h"       // 遥控（提供 rc_ch[]、sbus_begin、sbus_poll、sbus_get_lost）
 #include "src/PID.h"        // PID（提供 PID 结构体、pid_init、pid_calc、内环参数宏）
 #include "src/Motors.h"     // 电机（提供 motor_us[]、motors_begin、set_motor_us、set_all_motors）
+#include "src/BMP280.h"     // 气压计（提供 bmp_begin、bmp_read、bmp_set_ground、bmp_rel_alt_m）
 
 /* ============================================================================
  * 控制环常量
@@ -81,6 +82,10 @@ static bool arm_switching = false;   // 正在执行解锁/上锁动作
 
 static PID pid_roll_rate, pid_pitch_rate, pid_yaw_rate;   // 内环实例（外环用比例增益直接计算）
 
+// ---- BMP280 状态 ----
+static bool bmp_ok = false;             // 气压计是否在线
+static float bmp_tempC = 0, bmp_pressPa = 0, bmp_relAlt = 0;
+
 /* ============================================================================
  * setup
  * ========================================================================== */
@@ -111,6 +116,17 @@ void setup() {
   // ---- SBUS 初始化 ----
   sbus_begin();
   Serial.println("[SBUS] GPIO18 软件反相");
+
+  // ---- BMP280 气压计 ----
+  bmp_ok = bmp_begin();
+  if (bmp_ok) {
+    bmp_read(bmp_tempC, bmp_pressPa);
+    bmp_set_ground(bmp_pressPa);   // 记录起飞参考气压
+    Serial.printf("[BMP] 在线 | %.1f C | %.0f Pa | 参考高度已记录\n",
+                  bmp_tempC, bmp_pressPa);
+  } else {
+    Serial.println("[BMP] 未找到！检查 SDA=8 SCL=9 / VCC=3V3 / CSB 接 3V3");
+  }
 
   // ---- PID 初始化（内环）----
   pid_init(&pid_roll_rate,  RATE_P_ROLL,  RATE_I_ROLL,  RATE_D_ROLL);
@@ -148,6 +164,18 @@ void loop() {
 
   // ---- 2. 读 SBUS 遥控 ----
   sbus_poll();
+
+  // ---- 2.5 读 BMP280（100Hz 节拍，I2C 约 2ms，不影响 1kHz 环）----
+  if (bmp_ok) {
+    static uint32_t tBmp = 0;
+    if (now - tBmp >= 10000UL) {           // 每 10ms 一次
+      tBmp = now;
+      bmp_read(bmp_tempC, bmp_pressPa);
+      if (bmp_pressPa > 0) {
+        bmp_relAlt = bmp_rel_alt_m(bmp_pressPa);
+      }
+    }
+  }
 
   // ---- 3. 失控保护：1 秒没收到帧 = 强制上锁 ----
   bool rc_lost = sbus_get_lost();
@@ -238,9 +266,10 @@ void loop() {
   static uint32_t tPrint = 0;
   if (now - tPrint >= 100000UL) {
     tPrint = now;
-    Serial.printf("%s | R:%6.1f P:%6.1f Y:%6.1f | RC: %4u %4u %4u %4u | M: %4u %4u %4u %4u\n",
+    Serial.printf("%s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm %5.0fPa | RC: %4u %4u %4u %4u | M: %4u %4u %4u %4u\n",
                   armed ? "ARMED " : "DISARM",
                   roll_deg, pitch_deg, yaw_deg,
+                  bmp_ok ? bmp_relAlt : 0.0f, bmp_ok ? bmp_pressPa : 0.0f,
                   rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3],
                   motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
   }
