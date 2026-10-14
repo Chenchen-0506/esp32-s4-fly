@@ -1,11 +1,16 @@
 /*
  * ============================================================================
- * ESP32-S3 自研四旋翼 —— M6 主飞控（自稳模式 v1，模块化版）
+ * ESP32-S3 自研四旋翼 —— M7 主飞控（自稳 + 返航，模块化版）
  * ----------------------------------------------------------------------------
- * 整合：ICM-20948 姿态解算 + SBUS 遥控 + 串级 PID + X 型混控 + 解锁/失控保护
+ * 整合：ICM-20948 姿态解算 + SBUS 遥控 + 串级 PID + X 型混控 + CH5 解锁
+ *       + CH6 手动返航 + 遥控丢失自动返航（GPS + 罗盘 + 气压定高）
  *
  * 【功能模块化】本工程 src/ 目录按功能拆分，一个功能一个 .h/.cpp：
  *   src/ICM20948.h/.cpp   九轴 IMU 驱动 + Mahony 姿态 + 零偏校准
+ *   src/BMP280.h/.cpp     气压计驱动 + 相对高度
+ *   src/GPS.h/.cpp        BN-880 NMEA 解析（定位/卫星/经纬度）
+ *   src/MAG.h/.cpp        BN-880 内置罗盘（航向读取）
+ *   src/RTL.h/.cpp        返航状态机（手动/失控自动返航）
  *   src/SBUS.h/.cpp       SBUS 遥控解析（GPIO18 软件反相）
  *   src/PID.h/.cpp        串级 PID 控制器（含内环参数）
  *   src/Motors.h/.cpp     4 路电调 PWM 输出
@@ -16,11 +21,13 @@
  *   1. 第一次烧录后，先拆桨！桌面空载测试，不要装桨！
  *   2. 先地面试转（系留/测试架），确认转向正确、PID 不抖，再装桨
  *   3. 接电池时拔掉 USB；USB 调试时不要接电池
- *   4. 失控保护：SBUS 丢信号 1 秒自动上锁停转
+ *   4. 失控保护：丢信号 1 秒自动返航（有 GPS 定位）；无定位则缓降上锁
+ *   5. 返航依赖 GPS 定位 + 罗盘校准！未校准罗盘请勿使用返航（见 MAG.h）
  *
  * 接线（全部已验证）：
  *   ICM-20948 SPI：SCK=12 MISO=13 MOSI=11 CS=10（3V3）
  *   BMP280 I2C  ：SDA=8  SCL=9
+ *   BN-880 GPS  ：RX=16  TX=17（罗盘共用 I2C：SDA=8 SCL=9）
  *   SBUS 接收机  ：RX=18（软件反相，无需反相器）
  *   电机 PWM     ：M1=4  M2=5  M3=6  M4=7（50Hz，1000-2000µs）
  *   电调 BEC 红线全挑出！全机 5V = 好盈 UBEC
@@ -28,12 +35,17 @@
  * 遥控器通道（FlySky 默认）：
  *   CH1 = 横滚（左右）  CH2 = 俯仰（前后）
  *   CH3 = 油门（上下）  CH4 = 偏航（左右转向）
+ *   CH5 = 解锁/上锁开关  CH6 = 返航开关
  *
  * 解锁/上锁：
- *   油门最低 + 偏航右打 保持 2 秒 = 解锁（电机开始怠速）
- *   油门最低 + 偏航左打 保持 2 秒 = 上锁（电机停转）
+ *   油门最低 + CH5 拨高 保持 2 秒 = 解锁（记录 home 点）
+ *   CH5 拨低 = 上锁
  *
- * 调试：串口 115200，每秒打印一次姿态/遥控/油门状态
+ * 返航：
+ *   CH6 拨高 或 遥控丢失 = 自动返航（爬升 -> 飞回 -> 降落 -> 上锁）
+ *   无 GPS 定位时失控 = 直接缓降上锁（安全兜底）
+ *
+ * 调试：串口 115200，每秒打印一次姿态/遥控/GPS/返航状态
  * ============================================================================
  */
 
@@ -45,6 +57,9 @@
 #include "src/PID.h"        // PID（提供 PID 结构体、pid_init、pid_calc、内环参数宏）
 #include "src/Motors.h"     // 电机（提供 motor_us[]、motors_begin、set_motor_us、set_all_motors）
 #include "src/BMP280.h"     // 气压计（提供 bmp_begin、bmp_read、bmp_set_ground、bmp_rel_alt_m）
+#include "src/GPS.h"        // GPS（提供 gps_begin、gps_poll、gps_lat/gps_lon/gps_fix）
+#include "src/MAG.h"        // 罗盘（提供 mag_begin、mag_read）
+#include "src/RTL.h"        // 返航（提供 rtl_begin、rtl_set_home、rtl_update、RTL_Output）
 
 /* ============================================================================
  * 控制环常量
@@ -57,11 +72,13 @@
 #define ANGLE_P_PITCH         4.0f
 #define ANGLE_P_YAW           2.0f
 
-/* ---- 遥控通道映射（FlySky：CH1~CH4）---- */
+/* ---- 遥控通道映射（FlySky：CH1~CH6）---- */
 #define CH_ROLL               0    // CH1
 #define CH_PITCH              1    // CH2
 #define CH_THROTTLE           2    // CH3
 #define CH_YAW                3    // CH4
+#define CH_ARM                4    // CH5 解锁/上锁开关（高=解锁，低=上锁）
+#define CH_RTL                5    // CH6 返航开关（高=返航）
 
 #define RC_MIN                1000
 #define RC_MID                1500
@@ -86,6 +103,14 @@ static PID pid_roll_rate, pid_pitch_rate, pid_yaw_rate;   // 内环实例（外�
 static bool bmp_ok = false;             // 气压计是否在线
 static float bmp_tempC = 0, bmp_pressPa = 0, bmp_relAlt = 0;
 
+// ---- GPS / 罗盘 / 返航状态（M7）----
+static bool gps_ok = false;             // GPS 串口是否在线（能收到语句）
+static bool mag_ok = false;             // 罗盘是否在线
+static float mag_heading = 0.0f;        // 罗盘航向（度 0~360）
+static bool  rtl_active = false;        // 是否处于返航模式
+static bool  rtl_src_failsafe = false;  // 返航触发源：true=失控自动（不可中途退出），false=CH6 手动
+static RTL_Output rtl_out;              // 返航输出指令
+
 /* ============================================================================
  * setup
  * ========================================================================== */
@@ -94,8 +119,11 @@ void setup() {
   delay(300);
   Serial.println();
   Serial.println("========================================");
-  Serial.println("  ESP32-S3 自研四旋翼 / M6 主飞控 v1 (modular)");
+  Serial.println("  ESP32-S3 自研四旋翼 / M7 主飞控 (modular)");
   Serial.println("========================================");
+
+  // ---- I2C 总线统一初始化（BMP280 + 罗盘共用 SDA=8 SCL=9）----
+  Wire.begin(8, 9);
 
   // ---- ICM 自检 ----
   uint8_t who = icm_init();
@@ -128,6 +156,23 @@ void setup() {
     Serial.println("[BMP] 未找到！检查 SDA=8 SCL=9 / VCC=3V3 / CSB 接 3V3");
   }
 
+  // ---- GPS 初始化（M7）----
+  gps_begin();
+  gps_ok = true;   // 波特率扫描完成后串口已配置，能否定位看后续 gps_fix
+  Serial.println("[GPS] 已初始化（室外等待定位，室内无信号正常）");
+
+  // ---- 罗盘初始化（M7）----
+  mag_ok = mag_begin();
+  if (mag_ok) {
+    Serial.println("[MAG] 罗盘在线（返航前需磁校准！见 MAG.h 注释）");
+  } else {
+    Serial.println("[MAG] 罗盘未找到！返航功能不可用");
+  }
+
+  // ---- 返航模块 ----
+  rtl_begin();
+  Serial.println("[RTL] 返航模块就绪（CH6 或失控自动返航）");
+
   // ---- PID 初始化（内环）----
   pid_init(&pid_roll_rate,  RATE_P_ROLL,  RATE_I_ROLL,  RATE_D_ROLL);
   pid_init(&pid_pitch_rate, RATE_P_PITCH, RATE_I_PITCH, RATE_D_PITCH);
@@ -135,8 +180,10 @@ void setup() {
 
   Serial.println();
   Serial.println("=== 就绪 ===");
-  Serial.println("解锁：油门最低 + 偏航右打 2 秒");
-  Serial.println("上锁：油门最低 + 偏航左打 2 秒");
+  Serial.println("解锁：油门最低 + CH5 拨高 2 秒");
+  Serial.println("上锁：CH5 拨低");
+  Serial.println("返航：CH6 拨高（需 GPS 定位 + 罗盘校准）");
+  Serial.println("失控：自动返航（无定位则缓降上锁）");
   Serial.println("⚠ 首次测试务必拆桨！");
 }
 
@@ -177,46 +224,103 @@ void loop() {
     }
   }
 
-  // ---- 3. 失控保护：1 秒没收到帧 = 强制上锁 ----
-  bool rc_lost = sbus_get_lost();
-  if (rc_lost && armed) {
-    armed = false;
-    arm_switching = false;
-    set_all_motors(MIN_US);
-    Serial.println("[!] 失控！强制上锁");
+  // ---- 2.6 GPS + 罗盘采样（10Hz 节拍）----
+  static uint32_t tNav = 0;
+  if (now - tNav >= 100000UL) {
+    tNav = now;
+    gps_poll();                            // GPS 串口收包 + GGA 解析
+    if (gps_fix) gps_ok = true;
+    if (mag_ok) mag_read(mag_heading);
   }
 
-  // ---- 4. 解锁/上锁逻辑 ----
+  // ---- 3. 失控保护 + 返航触发（CH6 手动 / 遥控丢失自动）----
+  bool rc_lost = sbus_get_lost();
+  bool ch6_rtl = (rc_ch[CH_RTL] > 1500);   // CH6 拨高 = 手动返航
+
+  if (rc_lost) {
+    // —— 遥控丢失：自动返航（有定位）或缓降上锁（无定位）——
+    if (armed && !rtl_active) {
+      if (gps_fix && rtl_home_valid()) {
+        rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
+        rtl_active = true;
+        rtl_src_failsafe = true;   // 失控触发，不可中途退出
+        rtl_out = rtl_update(true, true, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+        Serial.println("[!] 遥控丢失 → 自动返航");
+      } else {
+        // 无定位无法返航：安全兜底直接上锁
+        armed = false;
+        arm_switching = false;
+        rtl_active = false;
+        rtl_reset();
+        set_all_motors(MIN_US);
+        Serial.println("[!] 遥控丢失且无 GPS 定位 → 强制上锁（安全策略）");
+      }
+    }
+  } else if (armed && ch6_rtl) {
+    // —— CH6 手动返航 ——
+    if (!rtl_active) {
+      if (gps_fix && rtl_home_valid()) {
+        rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
+        rtl_active = true;
+        rtl_src_failsafe = false;  // 手动触发
+        rtl_out = rtl_update(true, false, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+        Serial.println("[!] CH6 拨高 → 手动返航");
+      } else {
+        Serial.println("[!] CH6 返航被拒绝：无 GPS 定位/home（继续手动控制）");
+      }
+    }
+  } else {
+    // —— 遥控正常且 CH6 松开：仅手动返航可退出；降落阶段禁止退出（避免悬空）——
+    if (rtl_active && !rtl_src_failsafe &&
+        rtl_out.mode != RTL_DESCEND && rtl_out.mode != RTL_LANDED) {
+      rtl_active = false;
+      rtl_reset();
+      Serial.println("[RTL] 手动返航已退出（CH6 拨低）");
+    }
+  }
+
+  // ---- 4. 解锁/上锁逻辑（M7：CH5 开关控制）----
+  //   解锁：油门最低 + CH5 拨高 保持 2 秒；上锁：CH5 拨低
   float rc_thr = rc_ch[CH_THROTTLE];
-  float rc_yaw = rc_ch[CH_YAW];
   bool thr_low = (rc_thr < 1050);
+  bool ch5_arm = (rc_ch[CH_ARM] > 1500);   // CH5 高 = 请求解锁
 
   if (thr_low && !rc_lost) {
-    if (rc_yaw > 1800) {  // 偏航右打
+    if (ch5_arm) {
       if (!arm_switching) { arm_switching = true; arm_start_ms = millis(); }
       if (!armed && millis() - arm_start_ms > 2000) {
         armed = true;
         arm_switching = false;
-        Serial.println(">>> 已解锁，电机怠速 <<<");
+        // 记录起飞点（供返航使用）
+        if (gps_fix) {
+          rtl_set_home(gps_lat, gps_lon);
+          Serial.printf(">>> 已解锁，home: %.6f, %.6f <<<\n", gps_lat, gps_lon);
+        } else {
+          Serial.println(">>> 已解锁（无 GPS 定位，返航功能暂不可用）<<<");
+        }
       }
-    } else if (rc_yaw < 1200) {  // 偏航左打
-      if (!arm_switching) { arm_switching = true; arm_start_ms = millis(); }
-      if (armed && millis() - arm_start_ms > 2000) {
+    } else {
+      if (armed) {
         armed = false;
         arm_switching = false;
         set_all_motors(MIN_US);
-        Serial.println(">>> 已上锁，电机停转 <<<");
+        Serial.println(">>> CH5 拨低，已上锁，电机停转 <<<");
       }
-    } else {
       arm_switching = false;
     }
   } else {
     arm_switching = false;
   }
 
+  // ---- 4.5 返航状态机推进（rtl_active 且已解锁时每环更新）----
+  if (rtl_active && armed) {
+    rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+  }
+
   // ---- 5. 遥控通道映射 + 死区 ----
   float rc_roll  = rc_ch[CH_ROLL];
   float rc_pitch = rc_ch[CH_PITCH];
+  float rc_yaw   = rc_ch[CH_YAW];
   // 归一化到 -1 ~ +1
   float roll_cmd  = (fabs(rc_roll  - RC_MID)  < RC_DEADBAND) ? 0 : (rc_roll  - RC_MID)  / (RC_MAX - RC_MID);
   float pitch_cmd = (fabs(rc_pitch - RC_MID)  < RC_DEADBAND) ? 0 : (rc_pitch - RC_MID) / (RC_MAX - RC_MID);
@@ -225,13 +329,28 @@ void loop() {
   // 油门映射：1000~2000 -> 1000~1900
   float thr_out = map(rc_thr, RC_MIN, RC_MAX, THROTTLE_MIN, THROTTLE_MAX);
 
+  // ---- 5.5 返航模式：用 RTL 输出指令覆盖遥控 ----
+  if (rtl_active && armed) {
+    // 在返航中：油门由 RTL 状态机控制，姿态角由 RTL 计算
+    thr_out = rtl_out.throttle_us;
+  }
+
   // ---- 6. 串级 PID 计算 ----
-  if (armed && !rc_lost) {
-    // 自稳模式：目标角度 = 摇杆量 * 最大倾斜角，角度误差乘外环增益得目标角速度
-    float roll_angle_err  = roll_cmd  * 25.0f - roll_deg;   // 最大倾斜 25 度
-    float pitch_angle_err = pitch_cmd * 25.0f - pitch_deg;
-    // 偏航没有角度环（靠手动），直接用摇杆量当目标角速度
-    float yaw_target_rate = yaw_cmd * 100.0f;
+  // 返航激活时（含失控触发）也必须执行控制环，用 RTL 指令输出
+  if (armed && (rtl_active || !rc_lost)) {
+    float roll_angle_err, pitch_angle_err, yaw_target_rate;
+
+    if (rtl_active) {
+      // 返航：目标是 RTL 给出的姿态角/偏航速率
+      roll_angle_err   = rtl_out.target_roll   - roll_deg;
+      pitch_angle_err  = rtl_out.target_pitch  - pitch_deg;
+      yaw_target_rate  = rtl_out.target_yaw_rate;
+    } else {
+      // 自稳模式：目标角度 = 摇杆量 * 最大倾斜角
+      roll_angle_err   = roll_cmd  * 25.0f - roll_deg;   // 最大倾斜 25 度
+      pitch_angle_err  = pitch_cmd * 25.0f - pitch_deg;
+      yaw_target_rate  = yaw_cmd * 100.0f;              // 偏航手动
+    }
 
     // 内环：角速度 PID（误差 = 目标角速度 - 实测角速度）
     float roll_rate_err  = (roll_angle_err  * ANGLE_P_ROLL)  - gyr_dps[0];
@@ -255,6 +374,15 @@ void loop() {
     set_motor_us(1, (uint16_t)m2);
     set_motor_us(2, (uint16_t)m3);
     set_motor_us(3, (uint16_t)m4);
+
+    // 返航完成后自动上锁
+    if (rtl_active && rtl_out.mode == RTL_LANDED) {
+      armed = false;
+      rtl_active = false;
+      rtl_reset();
+      set_all_motors(MIN_US);
+      Serial.println(">>> 返航完成，已上锁 <<<");
+    }
   } else {
     set_all_motors(MIN_US);
     pid_roll_rate.i_term = 0;
@@ -266,11 +394,24 @@ void loop() {
   static uint32_t tPrint = 0;
   if (now - tPrint >= 100000UL) {
     tPrint = now;
-    Serial.printf("%s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm %5.0fPa | RC: %4u %4u %4u %4u | M: %4u %4u %4u %4u\n",
+    const char *rtl_name = rtl_active ? "RTL " : "MANU";
+    if (rtl_active) {
+      switch (rtl_out.mode) {
+        case RTL_CLIMB:   rtl_name = "RTL-CLIMB"; break;
+        case RTL_FLY:     rtl_name = "RTL-FLY  "; break;
+        case RTL_DESCEND: rtl_name = "RTL-DESC "; break;
+        case RTL_LANDED:  rtl_name = "RTL-LAND "; break;
+        default: break;
+      }
+    }
+    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HDG:%5.1f | M: %4u %4u %4u %4u\n",
                   armed ? "ARMED " : "DISARM",
+                  rtl_name,
                   roll_deg, pitch_deg, yaw_deg,
-                  bmp_ok ? bmp_relAlt : 0.0f, bmp_ok ? bmp_pressPa : 0.0f,
-                  rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3],
+                  bmp_ok ? bmp_relAlt : 0.0f,
+                  rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5],
+                  gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
+                  mag_ok ? mag_heading : -1.0f,
                   motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
   }
 

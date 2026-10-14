@@ -40,7 +40,7 @@ static uint16_t bmpRead16LE(uint8_t reg) {
 
 // ---- 初始化 ----
 bool bmp_begin() {
-  Wire.begin(BMP_I2C_SDA, BMP_I2C_SCL);   // ESP32-S3 指定 I2C 引脚
+  // Wire 已由主程序 setup 统一初始化（Wire.begin(8,9)），此处不再重复调用
 
   // 自动探测地址：0x76 / 0x77
   bmpAddr = 0;
