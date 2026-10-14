@@ -132,22 +132,31 @@ RTL_Output rtl_update(bool armed, bool rc_lost,
       out.target_pitch = pitch_cmd;
       out.target_roll  = 0;
 
-      // 接近 home 或 飞行太久 进入降落
+      // 接近 home 进入降落（水平修正由 DESCEND 分支保留）
       if (out.home_dist < RTL_NEAR) {
         out.mode = RTL_DESCEND;
-        out.target_pitch = 0;
-        out.target_yaw_rate = 0;
         descend_start_ms = millis();
       }
       break;
     }
     case RTL_DESCEND: {
-      // 缓降，触地（高度不再下降且很低）持续 2 秒 -> 上锁
+      // 缓降 + 保留水平位置修正（机头对准 home、距离 P 控制，限幅更小）
+      // —— 边缓降边回到 home 正上方，落点不再被风推偏
       out.target_roll = 0;
-      out.target_pitch = 0;
-      out.target_yaw_rate = 0;
       out.throttle_us = RTL_DESCEND_THR;
 
+      float b = bearing_to_home(lat, lon);
+      float yaw_err = wrap180(b - heading);
+      out.target_yaw_rate = RTL_YAW_P * yaw_err;
+      if (out.target_yaw_rate >  RTL_YAW_RATE_MAX) out.target_yaw_rate =  RTL_YAW_RATE_MAX;
+      if (out.target_yaw_rate < -RTL_YAW_RATE_MAX) out.target_yaw_rate = -RTL_YAW_RATE_MAX;
+
+      float pitch_cmd = RTL_PITCH_P * (out.home_dist - RTL_NEAR);
+      if (pitch_cmd >  RTL_DESCEND_MAX_TILT) pitch_cmd =  RTL_DESCEND_MAX_TILT;
+      if (pitch_cmd < -RTL_DESCEND_MAX_TILT) pitch_cmd = -RTL_DESCEND_MAX_TILT;
+      out.target_pitch = pitch_cmd;
+
+      // 触地判定（不变）：高度不再下降且很低，持续 2 秒 -> 上锁
       bool near_ground = (rel_alt < 1.0f);
       bool no_change   = (fabsf(rel_alt - last_alt) < 0.15f);
       if (near_ground && no_change) {

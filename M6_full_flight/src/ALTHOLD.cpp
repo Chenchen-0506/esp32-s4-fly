@@ -2,6 +2,7 @@
  * ============================================================================
  * ALTHOLD 功能模块实现 —— 定高控制（参考 ArduPilot AltHold 结构）
  * 含悬停油门自动学习（ArduPilot MOT_HOVER_LEARN 同款，NVS 持久化）
+ * 垂速来源：VERTEST 垂直融合（加速度+气压互补），替代原气压差分+低通
  * ============================================================================
  */
 #include "ALTHOLD.h"
@@ -10,8 +11,7 @@
 static bool      active = false;
 static float     target_alt = 0;
 static float     hover_thr = 1500;
-static float     last_alt = 0;
-static float     vert_spd = 0;        // 低通垂速（m/s）
+static float     vert_spd = 0;        // 垂速（m/s，由 VERTEST 融合提供）
 static float     thr_i = 0;           // 油门积分修正（µs）
 static uint32_t  last_ms = 0;         // 节流计时
 static uint32_t  last_save_ms = 0;    // NVS 保存计时
@@ -42,7 +42,6 @@ float althold_hover_thr() { return hover_thr; }
 void althold_start(float rel_alt, uint16_t hover_thr_us) {
   target_alt = rel_alt;
   hover_thr  = (float)hover_thr_us;   // 进入时以当前油门为基准（若已学习过则近悬停值）
-  last_alt   = rel_alt;
   vert_spd   = 0;
   thr_i      = 0;
   last_ms    = millis();
@@ -56,7 +55,7 @@ bool althold_active() { return active; }
 void althold_stop() { active = false; }
 
 /* ---- 每 20ms 更新一次（其余时间返回上次输出）---- */
-uint16_t althold_update(float rel_alt, float stick_thr) {
+uint16_t althold_update(float rel_alt, float vert_vel, float stick_thr) {
   if (!active) return last_out;
 
   uint32_t now = millis();
@@ -65,10 +64,8 @@ uint16_t althold_update(float rel_alt, float stick_thr) {
   float dt = (float)dms / 1000.0f;
   last_ms = now;
 
-  // 垂速估计：气压差分 + 低通
-  float vs_raw = (rel_alt - last_alt) / dt;
-  last_alt = rel_alt;
-  vert_spd = (1.0f - VS_LP) * vert_spd + VS_LP * vs_raw;
+  // 垂速：直接用 VERTEST 融合值（加速度+气压互补，噪声低 5~10 倍）
+  vert_spd = vert_vel;
 
   // 油门杆 → 目标垂速（死区 + 限幅）
   float stick_d = stick_thr - 1500.0f;

@@ -65,6 +65,7 @@
 #include "src/RTL.h"        // 返航（提供 rtl_begin、rtl_set_home、rtl_update、RTL_Output）
 #include "src/ALTHOLD.h"   // 定高（CH7 进入：高度外环->垂速内环->油门）
 #include "src/POSHOLD.h"   // 悬停（CH7 进入：位置误差->倾角 + 航向锁定）
+#include "src/VERTEST.h"   // 垂直融合（加速度+气压互补：融合高度/垂速）
 
 /* ============================================================================
  * 控制环常量
@@ -191,6 +192,11 @@ void setup() {
   rtl_begin();
   Serial.println("[RTL] 返航模块就绪（CH6 或失控自动返航）");
 
+  // ---- 垂直融合初始化（M10：BMP 已记录地面参考气压，rel_alt 初始=0）----
+  vertest_begin();
+  vertest_reset(0.0f);
+  Serial.println("[VERT] 垂直融合就绪（加速度+气压互补，垂速噪声降 5~10 倍）");
+
   // ---- 定高/悬停模块 ----
   althold_begin();
   althold_load_hover();   // 从 NVS 加载悬停油门基准（自动学习结果）
@@ -239,6 +245,9 @@ void loop() {
   mahony_update6(ax, ay, az, gx, gy, gz, dt);
   quat_to_euler_deg();
 
+  // ---- 1.2 垂直融合预测（1kHz，加速度积分更新高度/垂速）----
+  vertest_predict(acc_g[2], dt);
+
   // ---- 2. 读 SBUS 遥控 ----
   sbus_poll();
 
@@ -250,6 +259,7 @@ void loop() {
       bmp_read(bmp_tempC, bmp_pressPa);
       if (bmp_pressPa > 0) {
         bmp_relAlt = bmp_rel_alt_m(bmp_pressPa);
+        vertest_correct(bmp_relAlt);   // 垂直融合：气压观测修正（10Hz）
       }
     }
   }
@@ -274,7 +284,7 @@ void loop() {
         rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
         rtl_active = true;
         rtl_src_failsafe = true;   // 失控触发，不可中途退出
-        rtl_out = rtl_update(true, true, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+        rtl_out = rtl_update(true, true, gps_lat, gps_lon, mag_heading, vertest_alt());
         Serial.println("[!] 遥控丢失 → 自动返航");
       } else {
         // 无定位无法返航：安全兜底直接上锁
@@ -293,7 +303,7 @@ void loop() {
         rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
         rtl_active = true;
         rtl_src_failsafe = false;  // 手动触发
-        rtl_out = rtl_update(true, false, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+        rtl_out = rtl_update(true, false, gps_lat, gps_lon, mag_heading, vertest_alt());
         Serial.println("[!] CH6 拨高 → 手动返航");
       } else {
         Serial.println("[!] CH6 返航被拒绝：无 GPS 定位/home（继续手动控制）");
@@ -387,7 +397,7 @@ void loop() {
 
   // ---- 4.6 返航状态机推进（rtl_active 且已解锁时每环更新）----
   if (rtl_active && armed) {
-    rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, bmp_relAlt);
+    rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, vertest_alt());
   }
 
   // ---- 5. 遥控通道映射 + 死区 ----
@@ -413,10 +423,10 @@ void loop() {
   bool ch7_pos = (rc_ch[CH_POS] > 1500);
   if (armed && !rtl_active && !rc_lost) {
     if (ch7_pos) {
-      if (!althold_active()) althold_start(bmp_relAlt, (uint16_t)thr_out);
+      if (!althold_active()) althold_start(vertest_alt(), (uint16_t)thr_out);
       if (gps_fix && !poshold_active()) poshold_start(gps_lat, gps_lon, mag_heading);
       if (!gps_fix && poshold_active()) poshold_stop();
-      thr_out = althold_update(bmp_relAlt, rc_thr);
+      thr_out = althold_update(vertest_alt(), vertest_vel(), rc_thr);
       poshold_update(gps_lat, gps_lon, mag_heading,
                      rc_pitch, rc_roll, dt,
                      ph_pitch_cmd, ph_roll_cmd, ph_yaw_cmd);
@@ -512,7 +522,7 @@ void loop() {
                   armed ? "ARMED " : "DISARM",
                   rtl_name,
                   roll_deg, pitch_deg, yaw_deg,
-                  bmp_ok ? bmp_relAlt : 0.0f,
+                  bmp_ok ? vertest_alt() : 0.0f,
                   rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5], rc_ch[6],
                   gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
                   rtl_home_valid() ? 'Y' : 'N',

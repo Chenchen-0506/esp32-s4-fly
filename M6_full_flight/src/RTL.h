@@ -30,6 +30,7 @@
 #define RTL_CRUISE_THR   1500    // 巡航油门 µs
 #define RTL_DESCEND_THR  1280    // 缓降油门 µs（低于怠速即可缓降）
 #define RTL_MAX_TILT     15.0f   // 返航最大倾斜角（度）
+#define RTL_DESCEND_MAX_TILT 8.0f // 下降段最大倾斜角（度，保留位置修正但减弱，防落点被吹偏）
 #define RTL_YAW_RATE_MAX 120.0f  // 最大偏航速率（度/秒）
 #define RTL_PITCH_P      0.35f   // 前进倾斜比例（目标倾斜 = 距离误差 * P）
 #define RTL_YAW_P        2.5f    // 偏航对齐比例

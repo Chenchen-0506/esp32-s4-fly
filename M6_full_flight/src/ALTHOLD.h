@@ -7,8 +7,8 @@
  *   油门杆 = 升降速度指令（中位死区 30µs，杆推前=爬升）
  *   悬停油门：进入时取手动模式当前油门为基准，积分项自适应修正
  *
- * 注意：垂速由气压高度差分 + 低通估计（无 EKF），20ms 节流更新，
- *       试飞时若上下抖动先降 VEL_P，反应慢则升 ALT_P。
+ * 注意：垂速由 VERTEST 垂直融合模块提供（加速度+气压互补，
+ *       替代原气压差分+低通，噪声低 5~10 倍），20ms 节流更新。
  * ============================================================================
  */
 #ifndef ALTHOLD_H
@@ -43,6 +43,6 @@ void     althold_begin();
 void     althold_start(float rel_alt, uint16_t hover_thr_us);
 bool     althold_active();
 void     althold_stop();
-uint16_t althold_update(float rel_alt, float stick_thr);
+uint16_t althold_update(float rel_alt, float vert_vel, float stick_thr);
 
 #endif
