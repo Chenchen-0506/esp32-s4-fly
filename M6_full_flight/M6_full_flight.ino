@@ -63,6 +63,8 @@
 #include "src/GPS.h"        // GPS（提供 gps_begin、gps_poll、gps_lat/gps_lon/gps_fix）
 #include "src/MAG.h"        // 罗盘（提供 mag_begin、mag_read）
 #include "src/RTL.h"        // 返航（提供 rtl_begin、rtl_set_home、rtl_update、RTL_Output）
+#include "src/ALTHOLD.h"   // 定高（CH7 进入：高度外环->垂速内环->油门）
+#include "src/POSHOLD.h"   // 悬停（CH7 进入：位置误差->倾角 + 航向锁定）
 
 /* ============================================================================
  * 控制环常量
@@ -82,6 +84,7 @@
 #define CH_YAW                3    // CH4
 #define CH_ARM                4    // CH5 解锁/上锁开关（高=解锁，低=上锁）
 #define CH_RTL                5    // CH6 返航开关（高=返航）
+#define CH_POS                6    // CH7 定高/悬停开关（高=进入）
 
 #define RC_MIN                1000
 #define RC_MID                1500
@@ -397,6 +400,28 @@ void loop() {
     thr_out = rtl_out.throttle_us;
   }
 
+  // ---- 5.6 定高/悬停模式（CH7 高进入；返航/上锁/失控优先退出）----
+  float ph_pitch_cmd = 0, ph_roll_cmd = 0, ph_yaw_cmd = 0;
+  bool ch7_pos = (rc_ch[CH_POS] > 1500);
+  if (armed && !rtl_active && !rc_lost) {
+    if (ch7_pos) {
+      if (!althold_active()) althold_start(bmp_relAlt, (uint16_t)thr_out);
+      if (gps_fix && !poshold_active()) poshold_start(gps_lat, gps_lon, mag_heading);
+      if (!gps_fix && poshold_active()) poshold_stop();
+      thr_out = althold_update(bmp_relAlt, rc_thr);
+      poshold_update(gps_lat, gps_lon, mag_heading,
+                     rc_pitch, rc_roll, dt,
+                     ph_pitch_cmd, ph_roll_cmd, ph_yaw_cmd);
+      if (!poshold_active()) { ph_pitch_cmd = 0; ph_roll_cmd = 0; ph_yaw_cmd = 0; }
+    } else {
+      if (althold_active()) althold_stop();
+      if (poshold_active()) poshold_stop();
+    }
+  } else {
+    if (althold_active()) althold_stop();
+    if (poshold_active()) poshold_stop();
+  }
+
   // ---- 6. 串级 PID 计算 ----
   // 返航激活时（含失控触发）也必须执行控制环，用 RTL 指令输出
   if (armed && (rtl_active || !rc_lost)) {
@@ -407,6 +432,11 @@ void loop() {
       roll_angle_err   = rtl_out.target_roll   - roll_deg;
       pitch_angle_err  = rtl_out.target_pitch  - pitch_deg;
       yaw_target_rate  = rtl_out.target_yaw_rate;
+    } else if (poshold_active()) {
+      // 悬停：目标倾角/偏航率由 POSHOLD 给出（位置误差->倾角，航向锁定）
+      roll_angle_err   = ph_roll_cmd  - roll_deg;
+      pitch_angle_err  = ph_pitch_cmd - pitch_deg;
+      yaw_target_rate  = ph_yaw_cmd;
     } else {
       // 自稳模式：目标角度 = 摇杆量 * 最大倾斜角
       roll_angle_err   = roll_cmd  * 25.0f - roll_deg;   // 最大倾斜 25 度
@@ -467,13 +497,15 @@ void loop() {
         case RTL_LANDED:  rtl_name = "RTL-LAND "; break;
         default: break;
       }
+    } else if (poshold_active()) {
+      rtl_name = "POSHOLD";
     }
-    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HOME:%c | HDG:%5.1f | M: %4u %4u %4u %4u\n",
+    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HOME:%c | HDG:%5.1f | M: %4u %4u %4u %4u\n",
                   armed ? "ARMED " : "DISARM",
                   rtl_name,
                   roll_deg, pitch_deg, yaw_deg,
                   bmp_ok ? bmp_relAlt : 0.0f,
-                  rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5],
+                  rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5], rc_ch[6],
                   gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
                   rtl_home_valid() ? 'Y' : 'N',
                   mag_ok ? mag_heading : -1.0f,
