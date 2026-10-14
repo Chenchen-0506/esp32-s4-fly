@@ -66,6 +66,8 @@
 #include "src/ALTHOLD.h"   // 定高（CH7 进入：高度外环->垂速内环->油门）
 #include "src/POSHOLD.h"   // 悬停（CH7 进入：位置误差->倾角 + 航向锁定）
 #include "src/VERTEST.h"   // 垂直融合（加速度+气压互补：融合高度/垂速）
+#include "src/LOGGER.h"    // 飞行黑匣子（RAM 环形 + Flash 落盘，串口 D 导出）
+#include "src/TELEMETRY.h" // WiFi 实时看板（手机连热点浏览器查看/下载）
 
 /* ============================================================================
  * 控制环常量
@@ -220,6 +222,10 @@ void setup() {
     Serial.println("罗盘校准：未解锁 + 油门最低 + CH6 拨高 3 秒（旋转整机 30 秒自动完成）");
   }
   Serial.println("定高+悬停：解锁后 CH7 拨高（悬停稳定时自动学习悬停油门）；CH7 拨低退出");
+  // ---- 黑匣子 + WiFi 看板初始化 ----
+  logger_begin();
+  telemetry_begin();
+
   Serial.println("⚠ 首次测试务必拆桨！");
 }
 
@@ -227,6 +233,12 @@ void setup() {
  * loop（1kHz 控制环）
  * ========================================================================== */
 void loop() {
+  // ---- 串口命令：D = 导出黑匣子日志 ----
+  if (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == 'D' || c == 'd') logger_dump_all();
+  }
+
   static uint32_t tLast = 0;
   uint32_t now = micros();
   float dt = (tLast == 0) ? (1.0f/LOOP_HZ) : (float)(now - tLast) / 1e6f;
@@ -294,6 +306,7 @@ void loop() {
         rtl_reset();
         set_all_motors(MIN_US);
         Serial.println("[!] 遥控丢失且无 GPS 定位 → 强制上锁（安全策略）");
+        logger_flush();   // 黑匣子落盘
       }
     }
   } else if (armed && ch6_rtl) {
@@ -373,6 +386,7 @@ void loop() {
         rtl_reset();
         set_all_motors(MIN_US);
         Serial.println(">>> CH5 拨低，已上锁，电机停转 <<<");
+        logger_flush();   // 黑匣子落盘
       }
       arm_switching = false;
     }
@@ -492,6 +506,7 @@ void loop() {
       rtl_reset();
       set_all_motors(MIN_US);
       Serial.println(">>> 返航完成，已上锁 <<<");
+      logger_flush();   // 黑匣子落盘
     }
   } else {
     set_all_motors(MIN_US);
@@ -518,17 +533,25 @@ void loop() {
     } else if (poshold_active()) {
       rtl_name = "POSHOLD";
     }
-    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HOME:%c | HDG:%5.1f | M: %4u %4u %4u %4u\n",
-                  armed ? "ARMED " : "DISARM",
-                  rtl_name,
-                  roll_deg, pitch_deg, yaw_deg,
-                  bmp_ok ? vertest_alt() : 0.0f,
-                  rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5], rc_ch[6],
-                  gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
-                  rtl_home_valid() ? 'Y' : 'N',
-                  mag_ok ? mag_heading : -1.0f,
-                  motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
+    char log_line[LOG_LINE_LEN];
+    snprintf(log_line, sizeof(log_line),
+             "%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HOME:%c | HDG:%5.1f | M: %4u %4u %4u %4u\n",
+             armed ? "ARMED " : "DISARM",
+             rtl_name,
+             roll_deg, pitch_deg, yaw_deg,
+             bmp_ok ? vertest_alt() : 0.0f,
+             rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5], rc_ch[6],
+             gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
+             rtl_home_valid() ? 'Y' : 'N',
+             mag_ok ? mag_heading : -1.0f,
+             motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
+    Serial.print(log_line);
+    logger_log(log_line);
   }
+
+  // ---- 9. 黑匣子节拍 + WiFi 看板服务 ----
+  logger_tick();
+  telemetry_poll();
 
   // 严格 1kHz 节拍
   int32_t remain = (int32_t)LOOP_US - (int32_t)(micros() - now);
