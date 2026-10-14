@@ -2,13 +2,16 @@
  * ============================================================================
  * 罗盘功能模块 —— BN-880 内置磁力计（QMC5883L / HMC5883 自动识别）
  * ----------------------------------------------------------------------------
- * 来源：M5_gps_test 已验证代码，抽成模块。
  * 引脚：I2C（SDA=8 SCL=9，与 BMP280 共用总线）
- * 接口：
- *   bool  mag_begin();         初始化，成功返回 true
- *   void  mag_read(float &hdg);  读取航向（度 0~360，未校准）
- * 说明：航向为未校准值。正式返航前必须做磁校准：先测出 X/Y 偏移量，
- *       把校准后的 heading 偏移写入本文件 MAG_DECL/MAG_X_OFF/MAG_Y_OFF。
+ *
+ * 【自动磁校准】（无需手记数字/改代码）：
+ *   未解锁 + 油门最低 + CH6 拨高 3 秒 → 进入校准模式
+ *   水平端平机身，慢速旋转整机 2~3 圈 + 8 字，30 秒自动完成
+ *   （或拨低 CH6 提前结束）
+ *   校准值自动存入 ESP32 NVS（掉电不丢），下次开机自动加载。
+ *
+ * 【磁偏角】旋转测不出地理南北与地磁南北的夹角，需查表：
+ *   默认 MAG_DECL = -2.5f（桂林约 -2.5°，其他地区请查当地磁偏角修改）
  * ============================================================================
  */
 #ifndef MAG_H
@@ -16,12 +19,20 @@
 
 #include <Arduino.h>
 
-// 校准参数：水平旋转一周记录 X/Y 的最大最小值，填入后启用
-#define MAG_X_OFF  0.0f    // (Xmax+Xmin)/2 取负
-#define MAG_Y_OFF  0.0f    // (Ymax+Ymin)/2 取负
-#define MAG_DECL   0.0f    // 磁偏角（桂林约 -2°~-3°，可查当地值）
+// 磁偏角（真北修正）：桂林约 -2.5°。其他地区请查当地磁偏角修改此值
+#define MAG_DECL   -2.5f
+
+// 运行时硬磁偏移（自动校准后由 NVS 加载，mag_read 使用）
+extern float mag_x_off;
+extern float mag_y_off;
+
+void mag_load_cal();                  // 开机：从 NVS 加载校准值
+void mag_cal_start();                 // 开始校准采样（清空极值）
+int  mag_cal_step();                  // 采样推进：0=进行中 1=完成（已保存）
+void mag_cal_finish();                // 立即用当前极值计算并保存（提前结束用）
+bool mag_cal_active();                // 是否在校准中
+void mag_read(float &headingDeg);     // 读取航向（应用偏移 + 磁偏角）
 
 bool mag_begin();
-void mag_read(float &headingDeg);
 
 #endif

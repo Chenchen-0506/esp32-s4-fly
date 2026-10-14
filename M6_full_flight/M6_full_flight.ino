@@ -119,6 +119,11 @@ static RTL_Output rtl_out;              // 返航输出指令
 static bool      gps_locked = false;   // 是否已进入定位计时
 static uint32_t  gps_lock_ms = 0;      // 定位连续保持计时起点
 
+// ---- 罗盘自动校准模式（未解锁：油门最低 + CH6 拨高 3 秒进入）----
+static bool     mag_cal_mode = false;  // 校准采样进行中
+static bool     mag_cal_holding = false; // CH6 保持计时中
+static uint32_t mag_cal_hold_ms = 0;   // 保持计时起点
+
 /* ============================================================================
  * setup
  * ========================================================================== */
@@ -172,7 +177,9 @@ void setup() {
   // ---- 罗盘初始化（M7）----
   mag_ok = mag_begin();
   if (mag_ok) {
-    Serial.println("[MAG] 罗盘在线（返航前需磁校准！见 MAG.h 注释）");
+    mag_load_cal();   // 从 NVS 加载上次校准值
+    Serial.printf("[MAG] 罗盘在线，校准偏移 X=%.1f Y=%.1f（未校则为 0）\n",
+                  mag_x_off, mag_y_off);
   } else {
     Serial.println("[MAG] 罗盘未找到！返航功能不可用");
   }
@@ -193,6 +200,9 @@ void setup() {
   Serial.println("返航：CH6 拨高（120m 巡航；需 home + 罗盘校准）");
   Serial.println("home：起飞后 GPS 定位连续 1 分钟自动记录");
   Serial.println("失控：自动返航（无定位则缓降上锁）");
+  if (mag_ok) {
+    Serial.println("罗盘校准：未解锁 + 油门最低 + CH6 拨高 3 秒（旋转整机 30 秒自动完成）");
+  }
   Serial.println("⚠ 首次测试务必拆桨！");
 }
 
@@ -288,13 +298,42 @@ void loop() {
     }
   }
 
+  // ---- 3.5 罗盘自动校准模式（未解锁：油门最低 + CH6 拨高 3 秒）----
+  bool cal_hold = !armed && mag_ok &&
+                  (rc_ch[CH_THROTTLE] < 1050) && (rc_ch[CH_RTL] > 1500);
+  if (cal_hold) {
+    if (!mag_cal_holding) { mag_cal_holding = true; mag_cal_hold_ms = millis(); }
+    if (!mag_cal_mode && millis() - mag_cal_hold_ms > 3000UL) {
+      mag_cal_mode = true;
+      mag_cal_start();
+      Serial.println(">>> 进入罗盘校准：水平端平机身，慢速旋转整机 2~3 圈 + 8 字 <<<");
+      Serial.println(">>> 30 秒自动完成，或拨低 CH6 提前结束 <<<");
+    }
+  } else {
+    if (mag_cal_mode) {            // CH6 拨低 = 提前结束并用现有极值保存
+      mag_cal_finish();
+      mag_cal_mode = false;
+      Serial.printf(">>> 校准已保存：X_off=%.1f Y_off=%.1f <<<\n", mag_x_off, mag_y_off);
+    }
+    mag_cal_holding = false;
+  }
+  if (mag_cal_mode) {
+    int r = mag_cal_step();        // 采样推进 + 30 秒自动完成
+    if (r == 1) {
+      mag_cal_mode = false;
+      mag_cal_holding = false;
+      Serial.printf(">>> 校准完成：X_off=%.1f Y_off=%.1f <<<\n", mag_x_off, mag_y_off);
+      Serial.println(">>> 验证：机头朝真北 HDG≈0/360，朝东≈90（±3° 内合格）<<<");
+    }
+  }
+
   // ---- 4. 解锁/上锁逻辑（M7：CH5 开关控制）----
   //   解锁：油门最低 + CH5 拨高 保持 2 秒；上锁：CH5 拨低
   float rc_thr = rc_ch[CH_THROTTLE];
   bool thr_low = (rc_thr < 1050);
   bool ch5_arm = (rc_ch[CH_ARM] > 1500);   // CH5 高 = 请求解锁
 
-  if (thr_low && !rc_lost) {
+  if (thr_low && !rc_lost && !mag_cal_mode && !mag_cal_holding) {
     if (ch5_arm) {
       if (!arm_switching) { arm_switching = true; arm_start_ms = millis(); }
       if (!armed && millis() - arm_start_ms > 2000) {
@@ -417,8 +456,10 @@ void loop() {
   static uint32_t tPrint = 0;
   if (now - tPrint >= 100000UL) {
     tPrint = now;
-    const char *rtl_name = rtl_active ? "RTL " : "MANU";
-    if (rtl_active) {
+    const char *rtl_name = mag_cal_mode ? "MAGCAL" : (rtl_active ? "RTL " : "MANU");
+    if (mag_cal_mode) {
+      rtl_name = "MAGCAL";
+    } else if (rtl_active) {
       switch (rtl_out.mode) {
         case RTL_CLIMB:   rtl_name = "RTL-CLIMB"; break;
         case RTL_FLY:     rtl_name = "RTL-FLY  "; break;
