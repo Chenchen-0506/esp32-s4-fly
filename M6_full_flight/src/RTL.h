@@ -24,8 +24,8 @@
 #include <Arduino.h>
 
 /* ---- 返航参数（首次试飞建议保守）---- */
-#define RTL_ALT          15.0f   // 返航巡航高度（米）
-#define RTL_NEAR         12.0f   // 距 home 多近开始降落（米）
+#define RTL_ALT          120.0f  // 返航巡航高度（米）
+#define RTL_NEAR         5.0f    // 距 home 多近开始降落（米）
 #define RTL_CLIMB_THR    1500    // 爬升油门 µs
 #define RTL_CRUISE_THR   1500    // 巡航油门 µs
 #define RTL_DESCEND_THR  1280    // 缓降油门 µs（低于怠速即可缓降）

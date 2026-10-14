@@ -38,11 +38,14 @@
  *   CH5 = 解锁/上锁开关  CH6 = 返航开关
  *
  * 解锁/上锁：
- *   油门最低 + CH5 拨高 保持 2 秒 = 解锁（记录 home 点）
+ *   油门最低 + CH5 拨高 保持 2 秒 = 解锁
  *   CH5 拨低 = 上锁
  *
- * 返航：
- *   CH6 拨高 或 遥控丢失 = 自动返航（爬升 -> 飞回 -> 降落 -> 上锁）
+ * home 记录：
+ *   解锁起飞后，GPS 定位连续 1 分钟自动记录当前位置为 home（供返航）
+ *
+ * 返航（120m 巡航高度）：
+ *   CH6 拨高 或 遥控丢失 = 自动返航（爬升到 120m -> 飞回 home -> 降落 -> 上锁）
  *   无 GPS 定位时失控 = 直接缓降上锁（安全兜底）
  *
  * 调试：串口 115200，每秒打印一次姿态/遥控/GPS/返航状态
@@ -110,6 +113,11 @@ static float mag_heading = 0.0f;        // 罗盘航向（度 0~360）
 static bool  rtl_active = false;        // 是否处于返航模式
 static bool  rtl_src_failsafe = false;  // 返航触发源：true=失控自动（不可中途退出），false=CH6 手动
 static RTL_Output rtl_out;              // 返航输出指令
+
+// ---- home 记录：起飞后 GPS 定位连续 1 分钟才记录（用户要求）----
+#define HOME_LOCK_DELAY_MS   60000UL   // 定位连续保持时长
+static bool      gps_locked = false;   // 是否已进入定位计时
+static uint32_t  gps_lock_ms = 0;      // 定位连续保持计时起点
 
 /* ============================================================================
  * setup
@@ -182,7 +190,8 @@ void setup() {
   Serial.println("=== 就绪 ===");
   Serial.println("解锁：油门最低 + CH5 拨高 2 秒");
   Serial.println("上锁：CH5 拨低");
-  Serial.println("返航：CH6 拨高（需 GPS 定位 + 罗盘校准）");
+  Serial.println("返航：CH6 拨高（120m 巡航；需 home + 罗盘校准）");
+  Serial.println("home：起飞后 GPS 定位连续 1 分钟自动记录");
   Serial.println("失控：自动返航（无定位则缓降上锁）");
   Serial.println("⚠ 首次测试务必拆桨！");
 }
@@ -291,12 +300,9 @@ void loop() {
       if (!armed && millis() - arm_start_ms > 2000) {
         armed = true;
         arm_switching = false;
-        // 记录起飞点（供返航使用）
-        if (gps_fix) {
-          rtl_set_home(gps_lat, gps_lon);
-          Serial.printf(">>> 已解锁，home: %.6f, %.6f <<<\n", gps_lat, gps_lon);
-        } else {
-          Serial.println(">>> 已解锁（无 GPS 定位，返航功能暂不可用）<<<");
+        Serial.println(">>> 已解锁 <<<");
+        if (!gps_fix) {
+          Serial.println(">>> 等待 GPS 定位...（定位连续 1 分钟后自动记录 home）<<<");
         }
       }
     } else {
@@ -312,7 +318,22 @@ void loop() {
     arm_switching = false;
   }
 
-  // ---- 4.5 返航状态机推进（rtl_active 且已解锁时每环更新）----
+  // ---- 4.5 home 记录：起飞后 GPS 定位连续 1 分钟 ----
+  if (armed) {
+    if (gps_fix) {
+      if (!gps_locked) { gps_locked = true; gps_lock_ms = millis(); }
+      if (!rtl_home_valid() && millis() - gps_lock_ms >= HOME_LOCK_DELAY_MS) {
+        rtl_set_home(gps_lat, gps_lon);
+        Serial.printf(">>> home 已记录: %.6f, %.6f <<<\n", gps_lat, gps_lon);
+      }
+    } else {
+      gps_locked = false;   // 定位丢失，重新计时
+    }
+  } else {
+    gps_locked = false;
+  }
+
+  // ---- 4.6 返航状态机推进（rtl_active 且已解锁时每环更新）----
   if (rtl_active && armed) {
     rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, bmp_relAlt);
   }
@@ -404,13 +425,14 @@ void loop() {
         default: break;
       }
     }
-    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HDG:%5.1f | M: %4u %4u %4u %4u\n",
+    Serial.printf("%s %s | R:%6.1f P:%6.1f Y:%6.1f | ALT:%+6.1fm | RC: %4u %4u %4u %4u %4u %4u | GPS:%c%u %6.4f,%6.4f | HOME:%c | HDG:%5.1f | M: %4u %4u %4u %4u\n",
                   armed ? "ARMED " : "DISARM",
                   rtl_name,
                   roll_deg, pitch_deg, yaw_deg,
                   bmp_ok ? bmp_relAlt : 0.0f,
                   rc_ch[0], rc_ch[1], rc_ch[2], rc_ch[3], rc_ch[4], rc_ch[5],
                   gps_fix ? 'F' : 'N', gps_sats, gps_lat, gps_lon,
+                  rtl_home_valid() ? 'Y' : 'N',
                   mag_ok ? mag_heading : -1.0f,
                   motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
   }
