@@ -291,7 +291,11 @@ void loop() {
 
   if (rc_lost) {
     // —— 遥控丢失：自动返航（有定位）或缓降上锁（无定位）——
-    if (armed && !rtl_active) {
+    if (armed && rtl_active &&
+        (rtl_out.mode == RTL_DESCEND || rtl_out.mode == RTL_LANDED)) {
+      // 返航已进入降落段：失控不打断，继续降落（禁止重新爬升！）
+      rtl_src_failsafe = true;   // 标记为失控源，防止手动退出
+    } else if (armed && !rtl_active) {
       if (gps_fix && rtl_home_valid()) {
         rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
         rtl_active = true;
@@ -352,6 +356,9 @@ void loop() {
     mag_cal_holding = false;
   }
   if (mag_cal_mode) {
+    static uint32_t tMagCal = 0;
+    if (now - tMagCal < 10000UL) { } else {   // 10ms 节流，避免拖慢 1kHz 环
+    tMagCal = now;
     int r = mag_cal_step();        // 采样推进 + 30 秒自动完成
     if (r == 1) {
       mag_cal_mode = false;
@@ -359,6 +366,7 @@ void loop() {
       Serial.printf(">>> 校准完成：X_off=%.1f Y_off=%.1f <<<\n", mag_x_off, mag_y_off);
       Serial.println(">>> 验证：机头朝真北 HDG≈0/360，朝东≈90（±3° 内合格）<<<");
     }
+    }   // 磁校准节流结束
   }
 
   // ---- 4. 解锁/上锁逻辑（M7：CH5 开关控制）----
@@ -374,6 +382,15 @@ void loop() {
         armed = true;
         arm_switching = false;
         Serial.println(">>> 已解锁 <<<");
+        // 解锁瞬间重新记录地面气压 + 垂直融合归零（防气压漂移导致高度基准偏）
+        if (bmp_ok) {
+          bmp_read(bmp_tempC, bmp_pressPa);
+          if (bmp_pressPa > 0) {
+            bmp_set_ground(bmp_pressPa);
+            bmp_relAlt = 0.0f;
+            vertest_reset(0.0f);
+          }
+        }
         if (!gps_fix) {
           Serial.println(">>> 等待 GPS 定位...（定位连续 1 分钟后自动记录 home）<<<");
         }

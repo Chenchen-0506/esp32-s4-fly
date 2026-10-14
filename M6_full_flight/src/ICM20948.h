@@ -42,9 +42,13 @@
 #define B2_ACCEL_SMPLRT_DIV_2 0x11
 #define B2_ACCEL_CONFIG       0x14
 
-/* ---- 量程灵敏度 ---- */
+/* ---- 量程灵敏度 ----
+ * ACCEL_CONFIG(0x14)=0x1D → ACCEL_FS_SEL=11 → ±16g → 2048 LSB/g
+ * GYRO_CONFIG_1(0x01)=0x1F → GYRO_FS_SEL=11 → ±2000dps → 16.4 LSB/dps
+ * （原 ACC_LSB_G=4096 是 ±8g 的，与实际 ±16g 配置不匹配，
+ *   会让 VERTEST 垂直加速度缩水一半，静止 acc_z≈0.5g，定高垂速错乱） */
 #define GYRO_LSB_DPS          16.384f
-#define ACC_LSB_G             4096.0f
+#define ACC_LSB_G             2048.0f
 #define ICM_WHOAMI_EXPECT     0xEA
 
 /* ---- Mahony 参数 ---- */
