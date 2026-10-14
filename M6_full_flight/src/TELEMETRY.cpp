@@ -151,5 +151,12 @@ void telemetry_begin() {
 }
 
 void telemetry_poll() {
+  // 主 loop 为 1kHz，这里限流到 100Hz（10ms 节拍）：
+  // 同步 WebServer 的 handleClient 每环空转纯属浪费 CPU，
+  // 且浏览器是 1 秒轮询一次 /feed，10ms 粒度完全够用。
+  static uint32_t tTel = 0;
+  uint32_t now = millis();
+  if (now - tTel < 10) return;
+  tTel = now;
   server.handleClient();
 }
