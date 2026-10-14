@@ -27,6 +27,18 @@
 #define VS_LP        0.10f     // 垂速低通系数（越小越平滑但越延迟）
 #define ALT_STEP_MS  20UL      // 控制更新节流（与气压差分同步）
 
+/* ---- 悬停油门自动学习（ArduPilot MOT_HOVER_LEARN 同款）----
+ * 悬停稳定（油门杆中位 + 垂速小 + 高度误差小）时，把当前油门平滑学习进
+ * hover_thr，每 10 秒存一次 NVS，开机自动加载。飞几次后基准自动收敛，
+ * 无需手抄参数。 */
+#define HOVER_LEARN_RATE  0.02f  // 学习速率（越大学越快，过大会被风带偏）
+#define HOVER_SAVE_MS     10000UL // NVS 保存间隔
+#define HOVER_MAX_ALT_ERR 0.5f   // 允许学习的高度误差（m）
+#define HOVER_MAX_VS      0.3f   // 允许学习的垂速（m/s）
+
+void     althold_load_hover();   // 开机：从 NVS 加载悬停油门基准
+float    althold_hover_thr();    // 当前悬停油门基准（µs，供状态打印）
+
 void     althold_begin();
 void     althold_start(float rel_alt, uint16_t hover_thr_us);
 bool     althold_active();

@@ -191,6 +191,13 @@ void setup() {
   rtl_begin();
   Serial.println("[RTL] 返航模块就绪（CH6 或失控自动返航）");
 
+  // ---- 定高/悬停模块 ----
+  althold_begin();
+  althold_load_hover();   // 从 NVS 加载悬停油门基准（自动学习结果）
+  poshold_begin();
+  Serial.printf("[ALT] 定高/悬停就绪，悬停油门基准 %.0fµs（CH7 高进入；悬停中自动学习）\n",
+                althold_hover_thr());
+
   // ---- PID 初始化（内环）----
   pid_init(&pid_roll_rate,  RATE_P_ROLL,  RATE_I_ROLL,  RATE_D_ROLL);
   pid_init(&pid_pitch_rate, RATE_P_PITCH, RATE_I_PITCH, RATE_D_PITCH);
@@ -206,6 +213,7 @@ void setup() {
   if (mag_ok) {
     Serial.println("罗盘校准：未解锁 + 油门最低 + CH6 拨高 3 秒（旋转整机 30 秒自动完成）");
   }
+  Serial.println("定高+悬停：解锁后 CH7 拨高（悬停稳定时自动学习悬停油门）；CH7 拨低退出");
   Serial.println("⚠ 首次测试务必拆桨！");
 }
 

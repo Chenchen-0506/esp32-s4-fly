@@ -1,9 +1,11 @@
 /*
  * ============================================================================
  * ALTHOLD 功能模块实现 —— 定高控制（参考 ArduPilot AltHold 结构）
+ * 含悬停油门自动学习（ArduPilot MOT_HOVER_LEARN 同款，NVS 持久化）
  * ============================================================================
  */
 #include "ALTHOLD.h"
+#include <Preferences.h>
 
 static bool      active = false;
 static float     target_alt = 0;
@@ -12,19 +14,39 @@ static float     last_alt = 0;
 static float     vert_spd = 0;        // 低通垂速（m/s）
 static float     thr_i = 0;           // 油门积分修正（µs）
 static uint32_t  last_ms = 0;         // 节流计时
+static uint32_t  last_save_ms = 0;    // NVS 保存计时
 static uint16_t  last_out = 1000;     // 最近一次输出
+
+/* ---- NVS：悬停油门基准持久化 ---- */
+static void hover_save() {
+  Preferences p;
+  p.begin("althold", false);
+  p.putFloat("hover", hover_thr);
+  p.end();
+}
+
+void althold_load_hover() {
+  Preferences p;
+  p.begin("althold", true);
+  hover_thr = p.getFloat("hover", 1500.0f);
+  p.end();
+  if (hover_thr < 1100.0f || hover_thr > 1900.0f) hover_thr = 1500.0f; // 脏数据兜底
+}
 
 void althold_begin() {
   althold_stop();
 }
 
+float althold_hover_thr() { return hover_thr; }
+
 void althold_start(float rel_alt, uint16_t hover_thr_us) {
   target_alt = rel_alt;
-  hover_thr  = (float)hover_thr_us;
+  hover_thr  = (float)hover_thr_us;   // 进入时以当前油门为基准（若已学习过则近悬停值）
   last_alt   = rel_alt;
   vert_spd   = 0;
   thr_i      = 0;
   last_ms    = millis();
+  last_save_ms = millis();
   last_out   = hover_thr_us;
   active = true;
 }
@@ -70,5 +92,17 @@ uint16_t althold_update(float rel_alt, float stick_thr) {
 
   float thr = hover_thr + VEL_P * vs_err + thr_i;
   last_out = (uint16_t)constrain(thr, 1000.0f, 2000.0f);
+
+  // ---- 悬停油门自动学习（悬停稳定时向当前油门收敛）----
+  if (fabsf(stick_d) < ALT_STICK_DB &&   // 油门杆在中位（无主动升降意图）
+      fabsf(alt_err) < HOVER_MAX_ALT_ERR &&  // 高度误差小
+      fabsf(vert_spd) < HOVER_MAX_VS) {      // 垂速小（近似悬停）
+    hover_thr += ((float)last_out - hover_thr) * HOVER_LEARN_RATE;
+    if (millis() - last_save_ms >= HOVER_SAVE_MS) {
+      last_save_ms = millis();
+      hover_save();
+    }
+  }
+
   return last_out;
 }
