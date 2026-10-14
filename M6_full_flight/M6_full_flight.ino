@@ -309,6 +309,8 @@ void loop() {
       if (armed) {
         armed = false;
         arm_switching = false;
+        rtl_active = false;          // 清空返航状态：防残留导致再解锁后续飞返航
+        rtl_reset();
         set_all_motors(MIN_US);
         Serial.println(">>> CH5 拨低，已上锁，电机停转 <<<");
       }

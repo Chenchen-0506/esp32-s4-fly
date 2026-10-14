@@ -78,11 +78,19 @@ void gps_begin() {
 }
 
 void gps_poll() {
+  // 逐字符解析，绝不阻塞：readStringUntil 在无 '\n' 时会卡到超时（默认 1s），
+  // 会让 1kHz 控制环瞬间停摆，飞行中是致命的
+  static String linebuf;
   while (gps_ser.available()) {
-    String line = gps_ser.readStringUntil('\n');
-    line.trim();
-    if (line.startsWith("$GNGGA") || line.startsWith("$GPGGA")) {
-      parse_gga(line);
+    char c = (char)gps_ser.read();
+    if (c == '\n') {
+      linebuf.trim();
+      if (linebuf.startsWith("$GNGGA") || linebuf.startsWith("$GPGGA")) {
+        parse_gga(linebuf);
+      }
+      linebuf = "";
+    } else {
+      if (linebuf.length() < 96) linebuf += c;   // 限长，防无界增长
     }
   }
 }
