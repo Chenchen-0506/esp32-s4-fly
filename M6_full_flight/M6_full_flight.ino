@@ -160,9 +160,9 @@ void setup() {
   motors_begin();
   Serial.println("[MOTOR] 全部油门 1000（停转）");
 
-  // ---- SBUS 初始化 ----
+  // ---- 遥控（iBus）初始化 ----
   sbus_begin();
-  Serial.println("[SBUS] GPIO18 软件反相");
+  Serial.println("[RC] iBus(FS-iA6B) GPIO18 19200 8N1");
 
   // ---- BMP280 气压计 ----
   bmp_ok = bmp_begin();
@@ -564,6 +564,23 @@ void loop() {
              motor_us[0], motor_us[1], motor_us[2], motor_us[3]);
     Serial.print(log_line);
     logger_log(log_line);
+
+    // ---- 遥测快照（WiFi 仪表盘 /api，10Hz）----
+    tel_status.armed = armed;
+    strncpy(tel_status.mode, rtl_name, sizeof(tel_status.mode) - 1);
+    tel_status.mode[sizeof(tel_status.mode) - 1] = 0;
+    tel_status.roll  = roll_deg;
+    tel_status.pitch = pitch_deg;
+    tel_status.yaw   = yaw_deg;
+    tel_status.alt   = bmp_ok ? vertest_alt() : 0.0f;
+    for (int i = 0; i < 7; i++) tel_status.rc[i] = rc_ch[i];
+    tel_status.gps_fix    = gps_fix;
+    tel_status.gps_sats   = gps_sats;
+    tel_status.gps_lat    = gps_lat;
+    tel_status.gps_lon    = gps_lon;
+    tel_status.home_valid = rtl_home_valid();
+    tel_status.hdg        = mag_ok ? mag_heading : -1.0f;
+    for (int i = 0; i < 4; i++) tel_status.mot[i] = motor_us[i];
   }
 
   // ---- 9. 黑匣子节拍 + WiFi 看板服务 ----

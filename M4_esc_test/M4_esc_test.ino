@@ -79,8 +79,22 @@ void do_calibration() {
   print_status();
 }
 
-/* 当前选中电机自动缓升缓降 */
+/* 当前选中电机自动缓升缓降（0xFF = 全部四路一起） */
 void auto_test(uint8_t idx) {
+  if (idx == 0xFF) {
+    Serial.println("自动测试全部电机：1000→2000→1000");
+    for (uint16_t us = MIN_US; us <= MAX_US; us += 20) {
+      set_all_us(us);
+      delay(30);
+    }
+    for (uint16_t us = MAX_US; us >= MIN_US; us -= 20) {
+      set_all_us(us);
+      delay(30);
+    }
+    set_all_us(MIN_US);
+    print_status();
+    return;
+  }
   Serial.printf("自动测试电机 %d：1000→2000→1000\r\n", idx + 1);
   for (uint16_t us = MIN_US; us <= MAX_US; us += 20) {
     set_motor_us(idx, us);
@@ -144,8 +158,7 @@ void loop() {
       print_status();
     }
     else if (cmd == "t") {
-      if (sel != 0xFF) auto_test(sel);
-      else { Serial.println("先选电机（1-4）再 t"); }
+      auto_test(sel);   // 0xFF = 全部四路一起
     }
     else if (cmd == "all") {
       sel = 0xFF;

@@ -4,10 +4,10 @@
 
 ## 硬件（450mm X 型大机）
 
-- 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART：BN-880 GPS / SBUS：GPIO18）
+- 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART：BN-880 GPS / iBus：GPIO18（FS-iA6B 接收机））
 - 动力：2212 KV920 ×4 + 30A BLHeli 电调 ×4 + 1045 桨 + 4S 3000mAh
 - 传感器：ICM-20948 九轴（SPI）+ BMP280 气压计（I2C）+ BN-880 GPS/罗盘（UART+I2C）
-- 遥控：FlySky 6 通道（SBUS）：CH5 解锁开关、CH6 返航开关
+- 遥控：FlySky FS-i6 + FS-iA6B 接收机（iBus 19200）：CH5 解锁开关、CH6 返航开关
 
 ## 目录结构与功能模块约定
 
@@ -37,17 +37,17 @@ M6_full_flight/
     ├── GPS.h/.cpp            # BN-880 NMEA 解析（定位/卫星/经纬度）
     ├── MAG.h/.cpp            # BN-880 内置罗盘（航向读取 + 自动磁校准 NVS）
     ├── RTL.h/.cpp            # 返航状态机（手动/失控自动返航）
-    ├── SBUS.h/.cpp           # SBUS 接收解析 + 通道
+    ├── SBUS.h/.cpp           # 遥控接收解析（iBus/FS-iA6B，兼容旧接口）
     ├── PID.h/.cpp            # 串级 PID 控制器
     ├── Motors.h/.cpp         # 4 路电机 PWM 输出
     ├── ALTHOLD.h/.cpp        # 定高 + 悬停（CH7）
     ├── POSHOLD.h/.cpp        # 位置保持（GPS 悬停，参考 ArduPilot Loiter）
     ├── VERTEST.h/.cpp        # 垂直融合（1D 互补：加速度预测 1kHz + 气压修正 10Hz）
     ├── LOGGER.h/.cpp         # 黑匣子（RAM 环形 512 行 + LittleFS 落盘，串口 D 导出）
-    └── TELEMETRY.h/.cpp      # WiFi 看板（softAP 热点，手机浏览器实时查看/下载）
+    └── TELEMETRY.h/.cpp      # WiFi 仪表盘（softAP 热点，姿态/高度/航向/GPS/RC/电机）
 ```
 
-## 功能说明（M7 起，v0.12 最新）
+## 功能说明（M7 起，v0.13 最新）
 
 ### 解锁 / 上锁（CH5 开关）
 
@@ -58,7 +58,7 @@ M6_full_flight/
 ### 返航（CH6 手动 / 失控自动，120m 巡航）
 
 - **CH6 拨高**：进入手动返航（需 GPS 定位 + home 已记录，否则拒绝并提示）
-- **遥控丢失**（SBUS >1 秒无帧）：自动返航；**无 GPS 定位时直接强制上锁**（安全兜底）
+- **遥控丢失**（iBus >1 秒无帧）：自动返航；**无 GPS 定位时直接强制上锁**（安全兜底）
 - 返航流程：爬升到 **120m**（RTL_ALT）→ 机头对准 home 飞行（罗盘航向 + 距离 P 控制）→ 距 home <5m（RTL_NEAR）缓降 → 触地自动上锁
 - 手动返航在爬升/飞行阶段可拨低 CH6 退出；降落阶段禁止退出（防悬空）
 - 失控触发的返航不可中途退出；**已进入降落段时失控不打断，继续降落（禁止重爬 120m）**
@@ -84,10 +84,10 @@ M6_full_flight/
 - 串口监视器输入字母 **`D`** → 导出全部日志
 - 首次使用 LittleFS 自动格式化分区（正常现象）
 
-### WiFi 实时看板（TELEMETRY，v0.11）
+### WiFi 实时仪表盘（TELEMETRY，v0.13 升级）
 
 - 开机自动开热点 **`S4Fly-Telemetry`**（密码 `12345678`）
-- 手机连热点 → 浏览器打开 **`http://192.168.4.1`**：实时滚动姿态/高度/GPS/返航状态，右上角可下载完整记录
+- 手机连热点 → 浏览器打开 **`http://192.168.4.1`**：姿态球 + 高度/航向/GPS/遥控通道/电机油门仪表（500ms 刷新），日志滚动可下载
 - 完全无需 USB，适合外场悬停/试飞观测
 
 ### 参数调节
@@ -117,7 +117,7 @@ M6_full_flight/
 
 - `<Arduino.h>`、`<SPI.h>`、`<Wire.h>`、`<math.h>`
 
-IMU（ICM-20948）、气压计（BMP280）、GPS（NMEA）、罗盘（QMC5883L/HMC5883）、返航（RTL）、SBUS、PID、电机驱动全部为自研代码，位于 `M6_full_flight/src/`，clone 仓库后无需安装任何额外库即可编译。
+IMU（ICM-20948）、气压计（BMP280）、GPS（NMEA）、罗盘（QMC5883L/HMC5883）、返航（RTL）、遥控（iBus）、PID、电机驱动全部为自研代码，位于 `M6_full_flight/src/`，clone 仓库后无需安装任何额外库即可编译。
 
 ### 命令行编译（可选）
 
@@ -142,6 +142,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.10-vertfusion-descend`：垂直融合（VERTEST）+ 返航下降段水平位置修正
   - `v0.11-blackbox-wifi`：黑匣子（LOGGER）+ WiFi 看板（TELEMETRY）
   - `v0.12-selfcheck-fix`：代码自检修复（加速度量程 bug / 失控降落保护 / 解锁重定高 / 磁校准节流）
+  - `v0.13-ibus-dashboard`：遥控接收 SBUS→iBus（FS-iA6B 适配）；WiFi 看板升级为仪表盘（/api JSON，姿态球/高度/航向/GPS/RC/电机）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述
 
