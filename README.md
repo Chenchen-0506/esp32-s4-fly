@@ -4,6 +4,8 @@
 
 ## 硬件（450mm X 型大机）
 
+> 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.14）
+
 - 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART：BN-880 GPS / iBus：GPIO18（FS-iA6B 接收机））
 - 动力：2212 KV920 ×4 + 30A BLHeli 电调 ×4 + 1045 桨 + 4S 3000mAh
 - 传感器：ICM-20948 九轴（SPI）+ BMP280 气压计（I2C）+ BN-880 GPS/罗盘（UART+I2C）
