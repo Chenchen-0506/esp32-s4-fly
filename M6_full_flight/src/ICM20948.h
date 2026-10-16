@@ -62,6 +62,8 @@ extern float acc_g[3];     // 加速度 g
 extern float gyr_dps[3];   // 陀螺 度/秒
 extern float roll_deg, pitch_deg, yaw_deg;
 extern float gyr_bias[3];  // 零偏
+extern float imu_q[4];      // 姿态四元数 (w,x,y,z)，供 VERTEST 姿态补偿
+extern float imu_q[4];      // 姿态四元数 (w,x,y,z)，供 VERTEST 姿态补偿
 
 /* ---- 接口 ---- */
 uint8_t icm_init();

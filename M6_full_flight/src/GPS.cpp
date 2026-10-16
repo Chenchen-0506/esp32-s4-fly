@@ -14,36 +14,35 @@ uint8_t gps_sats = 0;
 static int gps_baud = 0;   // 0=未锁定
 
 /* ---- GGA 解析：$GNGGA/$GPGGA ---- */
-static void parse_gga(String line) {
+static void parse_gga(const char *line) {
   // 字段：0=$xxGGA 1=时间 2=纬度 3=N/S 4=经度 5=E/W 6=定位 7=卫星数 8=HDOP 9=海拔
-  int f = 0, start = 0;
-  String fields[12];
-  for (int i = 0; i < (int)line.length() && f < 12; i++) {
-    if (line[i] == ',' || i == (int)line.length() - 1) {
-      fields[f++] = line.substring(start, i + 1);
-      start = i + 1;
-    }
-  }
-  if (f < 10) return;
+  char buf[96];
+  strncpy(buf, line, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = 0;
+  char *f[12] = {0};
+  int fc = 0;
+  char *tok = strtok(buf, ",");
+  while (tok && fc < 12) { f[fc++] = tok; tok = strtok(NULL, ","); }
+  if (fc < 10) return;
 
-  gps_fix  = (fields[6].toInt() > 0);
-  gps_sats = (uint8_t)fields[7].toInt();
+  gps_fix  = (atoi(f[6]) > 0);
+  gps_sats = (uint8_t)atoi(f[7]);
 
   // 纬度 ddmm.mmmm -> 度
-  if (fields[2].length() >= 7) {
-    float raw = fields[2].toFloat();
+  if (strlen(f[2]) >= 7) {
+    float raw = atof(f[2]);
     int deg = (int)(raw / 100);
     gps_lat = deg + (raw - deg * 100) / 60.0f;
-    if (fields[3] == "S") gps_lat = -gps_lat;
+    if (f[3][0] == 'S') gps_lat = -gps_lat;
   }
   // 经度 dddmm.mmmm -> 度
-  if (fields[4].length() >= 7) {
-    float raw = fields[4].toFloat();
+  if (strlen(f[4]) >= 7) {
+    float raw = atof(f[4]);
     int deg = (int)(raw / 100);
     gps_lon = deg + (raw - deg * 100) / 60.0f;
-    if (fields[5] == "W") gps_lon = -gps_lon;
+    if (f[5][0] == 'W') gps_lon = -gps_lon;
   }
-  if (fields[9].length() > 0) gps_alt = fields[9].toFloat();
+  if (f[9][0]) gps_alt = atof(f[9]);
 }
 
 /* ---- 波特率扫描：每档试 1.2s，收到 $G* 开头即锁定 ---- */
@@ -80,17 +79,20 @@ void gps_begin() {
 void gps_poll() {
   // 逐字符解析，绝不阻塞：readStringUntil 在无 '\n' 时会卡到超时（默认 1s），
   // 会让 1kHz 控制环瞬间停摆，飞行中是致命的
-  static String linebuf;
+  static char linebuf[96];
+  static uint8_t li = 0;
   while (gps_ser.available()) {
     char c = (char)gps_ser.read();
     if (c == '\n') {
-      linebuf.trim();
-      if (linebuf.startsWith("$GNGGA") || linebuf.startsWith("$GPGGA")) {
+      linebuf[li] = 0;
+      if (li >= 6 &&
+          (strncmp(linebuf, "$GNGGA", 6) == 0 ||
+           strncmp(linebuf, "$GPGGA", 6) == 0)) {
         parse_gga(linebuf);
       }
-      linebuf = "";
-    } else {
-      if (linebuf.length() < 96) linebuf += c;   // 限长，防无界增长
+      li = 0;
+    } else if (li < sizeof(linebuf) - 1) {
+      linebuf[li++] = c;   // 限长，防无界增长
     }
   }
 }

@@ -81,6 +81,7 @@ static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 static float eInt[3] = {0, 0, 0};
 float roll_deg, pitch_deg, yaw_deg;
 float gyr_bias[3] = {0, 0, 0};
+float imu_q[4]     = {1, 0, 0, 0};   // 姿态四元数镜像（供 VERTEST 姿态补偿）
 
 static void q_init_from_accel(float ax, float ay, float az) {
   (void)az;
@@ -137,4 +138,6 @@ void quat_to_euler_deg() {
   roll_deg  = roll_rad * RAD2DEG;
   pitch_deg = pitch_rad * RAD2DEG;
   yaw_deg   = yaw_rad * RAD2DEG;
+  // 同步四元数镜像（mahony 更新后每环被调用，保证 VERTEST 取到最新姿态）
+  imu_q[0] = q0; imu_q[1] = q1; imu_q[2] = q2; imu_q[3] = q3;
 }

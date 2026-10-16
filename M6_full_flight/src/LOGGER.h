@@ -21,7 +21,7 @@
 #include <Arduino.h>
 
 #define LOG_LINES     512      // RAM 环形容量（行）
-#define LOG_LINE_LEN  176      // 每行最大字符（含换行，现有打印行约 155 字符）
+#define LOG_LINE_LEN  200      // 每行最大字符（含换行，现有打印行约 162 字符，留余量防 -Wformat-truncation）
 #define LOG_SAVE_MS   60000UL  // Flash 落盘周期（ms）
 #define LOG_FILE_MAX  1000000UL // 黑匣子文件上限（字节）
 

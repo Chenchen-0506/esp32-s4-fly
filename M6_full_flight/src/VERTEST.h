@@ -7,8 +7,8 @@
  *   修正（10Hz） ：BMP280 气压高度观测，按增益拉回（低通气压噪声、
  *                  拉住加速度积分的长期漂移）
  *
- * 假设：小倾角飞行（≤15°，定高/悬停场景成立），机体 z 轴近似重力方向，
- *       垂直加速度 = (acc_z_g - 1) * 9.80665（向上为正，与高度符号一致）。
+ * 姿态补偿：用姿态四元数把机体 3 轴加速度旋转到地理系，取向上分量再减重力，
+ *       消除倾斜飞行时（航点 15°/手动 25°）机体 z 与重力不重合造成的垂速误差。
  *
  * 输出：
  *   vertest_alt()   融合高度（m，正=高于起飞点）
@@ -27,7 +27,7 @@
 
 void  vertest_begin();
 void  vertest_reset(float alt0);       // 以当前高度初始化（BMP 地面定高后）
-void  vertest_predict(float acc_z_g, float dt);  // 每环（1kHz）
+void  vertest_predict(float ax, float ay, float az, const float q[4], float dt);  // 每环（1kHz），q=姿态四元数(w,x,y,z)
 void  vertest_correct(float bmp_alt);  // 气压更新时（10Hz）
 float vertest_alt();
 float vertest_vel();

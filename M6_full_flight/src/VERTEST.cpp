@@ -23,11 +23,17 @@ void vertest_reset(float alt0) {
 }
 
 /* 预测：垂直加速度 -> 垂速 -> 高度（每环 1kHz 调用） */
-void vertest_predict(float acc_z_g, float dt) {
+void vertest_predict(float ax, float ay, float az, const float q[4], float dt) {
   if (!vert_inited) return;
 
-  /* 机体 z 轴加速度（g，静止平放 ≈ +1g），去重力后为垂直加速度（向上为正） */
-  float a = (acc_z_g - 1.0f) * 9.80665f;
+  /* 机体加速度（g）→ 地理系（ENU）向上分量（含重力，静止水平 ≈ +1g）
+   * body->ENU 旋转矩阵第三行：[ 2(xz-wy)  2(yz+wx)  (w²+z²-x²-y²) ] */
+  float w = q[0], x = q[1], y = q[2], z = q[3];
+  float up = (w*w + z*z - x*x - y*y) * az
+           + 2.0f*(x*z - w*y) * ax
+           + 2.0f*(y*z + w*x) * ay;
+
+  float a = (up - 1.0f) * 9.80665f;   // 去重力后为垂直加速度（向上为正）
   if (a >  VERT_ACC_MAX) a =  VERT_ACC_MAX;
   if (a < -VERT_ACC_MAX) a = -VERT_ACC_MAX;
 

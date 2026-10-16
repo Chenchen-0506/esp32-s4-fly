@@ -2,7 +2,7 @@
  * ============================================================================
  * ESP32-S3 自研四旋翼 —— M7 主飞控（自稳 + 返航，模块化版）
  * ----------------------------------------------------------------------------
- * 整合：ICM-20948 姿态解算 + SBUS 遥控 + 串级 PID + X 型混控 + CH5 解锁
+ * 整合：ICM-20948 姿态解算 + iBus(FlySky) 遥控 + 串级 PID + X 型混控 + CH5 解锁
  *       + CH6 手动返航 + 遥控丢失自动返航（GPS + 罗盘 + 气压定高）
  *
  * 【功能模块化】本工程 src/ 目录按功能拆分，一个功能一个 .h/.cpp：
@@ -11,7 +11,7 @@
  *   src/GPS.h/.cpp        BN-880 NMEA 解析（定位/卫星/经纬度）
  *   src/MAG.h/.cpp        BN-880 内置罗盘（航向读取）
  *   src/RTL.h/.cpp        返航状态机（手动/失控自动返航）
- *   src/SBUS.h/.cpp       SBUS 遥控解析（GPIO18 软件反相）
+ *   src/SBUS.h/.cpp       iBus 遥控解析（GPIO18 19200 8N1，FS-iA6B）
  *   src/PID.h/.cpp        串级 PID 控制器（含内环参数）
  *   src/Motors.h/.cpp     4 路电调 PWM 输出
  * 主文件只保留：引脚/常量的应用层定义、setup、1kHz 控制环、解锁/上锁
@@ -28,7 +28,7 @@
  *   ICM-20948 SPI：SCK=12 MISO=13 MOSI=11 CS=10（3V3）
  *   BMP280 I2C  ：SDA=8  SCL=9
  *   BN-880 GPS  ：RX=16  TX=17（罗盘共用 I2C：SDA=8 SCL=9）
- *   SBUS 接收机  ：RX=18（软件反相，无需反相器）
+ *   iBus 接收机  ：RX=18（19200 8N1，FS-iA6B，无需反相）
  *   电机 PWM     ：M1=4  M2=5  M3=6  M4=7（50Hz，1000-2000µs）
  *   电调 BEC 红线全挑出！全机 5V = 好盈 UBEC
  *
@@ -261,7 +261,7 @@ void loop() {
   quat_to_euler_deg();
 
   // ---- 1.2 垂直融合预测（1kHz，加速度积分更新高度/垂速）----
-  vertest_predict(acc_g[2], dt);
+  vertest_predict(acc_g[0], acc_g[1], acc_g[2], imu_q, dt);   // 姿态补偿：机体3轴加速度→地理系向上分量
 
   // ---- 2. 读 SBUS 遥控 ----
   sbus_poll();
@@ -446,10 +446,22 @@ void loop() {
   if (wp_pending) {
     if (!armed) { wp_pending = false; wp_stop(); }            // 上锁即取消
     else if (rc_lost || rtl_active) { wp_pending = false; wp_stop(); }  // 返航/失控优先
-    else if (gps_fix) {
-      wp_out = wp_update(armed, gps_lat, gps_lon, mag_heading, vertest_alt());
+    else if (!gps_fix) {
+      // GPS 定位丢失：航线不可持续，立即取消回手动（防止油门/姿态指令悬空）
+      wp_pending = false; wp_stop();
+      Serial.println("[WP] GPS 定位丢失，航线已取消（回手动）");
     }
-    // 未定位：等待（保持请求，定位后自动开飞）
+    else {
+      // 摇杆偏离中位 → 立即退出航点回手动（用户接管优先，与 README 一致）
+      if (fabsf(rc_ch[CH_ROLL]  - RC_MID) > RC_DEADBAND + 10 ||
+          fabsf(rc_ch[CH_PITCH] - RC_MID) > RC_DEADBAND + 10 ||
+          fabsf(rc_ch[CH_YAW]   - RC_MID) > RC_DEADBAND + 10) {
+        wp_pending = false; wp_stop();
+        Serial.println("[WP] 摇杆接管，航线已退出（回手动）");
+      } else {
+        wp_out = wp_update(armed, gps_lat, gps_lon, mag_heading, vertest_alt());
+      }
+    }
   }
 
   // ---- 5. 遥控通道映射 + 死区 ----
@@ -477,7 +489,7 @@ void loop() {
 
   // ---- 5.6 定高/悬停模式（CH7 高进入；返航/上锁/失控优先退出）----
   float ph_pitch_cmd = 0, ph_roll_cmd = 0, ph_yaw_cmd = 0;
-  bool ch7_pos = (rc_ch[CH_POS] > 1500);
+  bool ch7_pos = !wp_pending && (rc_ch[CH_POS] > 1500);   // 航点模式下 CH7 定高不接管（防止油门被二次覆盖）
   if (armed && !rtl_active && !rc_lost) {
     if (ch7_pos) {
       if (!althold_active()) althold_start(vertest_alt(), (uint16_t)thr_out);
