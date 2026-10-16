@@ -57,6 +57,7 @@
 
 #include "src/ICM20948.h"   // IMU 姿态（提供 acc_g/gyr_dps/roll/pitch/yaw、icm_init、imu_calibrate、mahony_update6、quat_to_euler_deg）
 #include "src/SBUS.h"       // 遥控（提供 rc_ch[]、sbus_begin、sbus_poll、sbus_get_lost）
+#include "src/WAYPOINT.h"   // 航点飞行（WiFi 网页下发目标坐标）
 #include "src/PID.h"        // PID（提供 PID 结构体、pid_init、pid_calc、内环参数宏）
 #include "src/Motors.h"     // 电机（提供 motor_us[]、motors_begin、set_motor_us、set_all_motors）
 #include "src/BMP280.h"     // 气压计（提供 bmp_begin、bmp_read、bmp_set_ground、bmp_rel_alt_m）
@@ -118,6 +119,8 @@ static bool mag_ok = false;             // 罗盘是否在线
 static float mag_heading = 0.0f;        // 罗盘航向（度 0~360）
 static bool  rtl_active = false;        // 是否处于返航模式
 static bool  rtl_src_failsafe = false;  // 返航触发源：true=失控自动（不可中途退出），false=CH6 手动
+bool wp_pending = false;             // 航点请求（WiFi 网页置位，主程序校验后执行）
+static WP_Output wp_out;             // 航点输出指令
 static RTL_Output rtl_out;              // 返航输出指令
 
 // ---- home 记录：起飞后 GPS 定位连续 1 分钟才记录（用户要求）----
@@ -300,6 +303,8 @@ void loop() {
         rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
         rtl_active = true;
         rtl_src_failsafe = true;   // 失控触发，不可中途退出
+        wp_pending = false;
+        wp_stop();
         rtl_out = rtl_update(true, true, gps_lat, gps_lon, mag_heading, vertest_alt());
         Serial.println("[!] 遥控丢失 → 自动返航");
       } else {
@@ -308,6 +313,8 @@ void loop() {
         arm_switching = false;
         rtl_active = false;
         rtl_reset();
+        wp_pending = false;
+        wp_stop();
         set_all_motors(MIN_US);
         Serial.println("[!] 遥控丢失且无 GPS 定位 → 强制上锁（安全策略）");
         logger_flush();   // 黑匣子落盘
@@ -320,6 +327,8 @@ void loop() {
         rtl_reset();               // 确保从 IDLE/CLIMB 重新开始
         rtl_active = true;
         rtl_src_failsafe = false;  // 手动触发
+        wp_pending = false;
+        wp_stop();
         rtl_out = rtl_update(true, false, gps_lat, gps_lon, mag_heading, vertest_alt());
         Serial.println("[!] CH6 拨高 → 手动返航");
       } else {
@@ -401,6 +410,8 @@ void loop() {
         arm_switching = false;
         rtl_active = false;          // 清空返航状态：防残留导致再解锁后续飞返航
         rtl_reset();
+        wp_pending = false;
+        wp_stop();
         set_all_motors(MIN_US);
         Serial.println(">>> CH5 拨低，已上锁，电机停转 <<<");
         logger_flush();   // 黑匣子落盘
@@ -431,6 +442,16 @@ void loop() {
     rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, vertest_alt());
   }
 
+  // ---- 4.7 航点飞行推进（网页请求 + 已解锁 + 定位 + 无返航/无失控）----
+  if (wp_pending) {
+    if (!armed) { wp_pending = false; wp_stop(); }            // 上锁即取消
+    else if (rc_lost || rtl_active) { wp_pending = false; wp_stop(); }  // 返航/失控优先
+    else if (gps_fix) {
+      wp_out = wp_update(armed, gps_lat, gps_lon, mag_heading, vertest_alt());
+    }
+    // 未定位：等待（保持请求，定位后自动开飞）
+  }
+
   // ---- 5. 遥控通道映射 + 死区 ----
   float rc_roll  = rc_ch[CH_ROLL];
   float rc_pitch = rc_ch[CH_PITCH];
@@ -447,6 +468,11 @@ void loop() {
   if (rtl_active && armed) {
     // 在返航中：油门由 RTL 状态机控制，姿态角由 RTL 计算
     thr_out = rtl_out.throttle_us;
+  }
+
+  // ---- 5.55 航点模式：用 WP 输出指令覆盖遥控 ----
+  if (wp_pending && armed && gps_fix && !rtl_active && !rc_lost) {
+    thr_out = wp_out.throttle_us;
   }
 
   // ---- 5.6 定高/悬停模式（CH7 高进入；返航/上锁/失控优先退出）----
@@ -481,6 +507,11 @@ void loop() {
       roll_angle_err   = rtl_out.target_roll   - roll_deg;
       pitch_angle_err  = rtl_out.target_pitch  - pitch_deg;
       yaw_target_rate  = rtl_out.target_yaw_rate;
+    } else if (wp_pending && armed && gps_fix && !rc_lost) {
+      // 航点：目标是 WP 给出的姿态角/偏航速率
+      roll_angle_err   = wp_out.target_roll   - roll_deg;
+      pitch_angle_err  = wp_out.target_pitch  - pitch_deg;
+      yaw_target_rate  = wp_out.target_yaw_rate;
     } else if (poshold_active()) {
       // 悬停：目标倾角/偏航率由 POSHOLD 给出（位置误差->倾角，航向锁定）
       roll_angle_err   = ph_roll_cmd  - roll_deg;
@@ -547,6 +578,13 @@ void loop() {
         case RTL_LANDED:  rtl_name = "RTL-LAND "; break;
         default: break;
       }
+    } else if (wp_pending && gps_fix && wp_active()) {
+      switch (wp_out.mode) {
+        case WP_CLIMB:   rtl_name = "WP-CLIMB "; break;
+        case WP_FLY:     rtl_name = "WP-FLY   "; break;
+        case WP_ARRIVED: rtl_name = "WP-ARRIV "; break;
+        default: break;
+      }
     } else if (poshold_active()) {
       rtl_name = "POSHOLD";
     }
@@ -580,6 +618,7 @@ void loop() {
     tel_status.gps_lon    = gps_lon;
     tel_status.home_valid = rtl_home_valid();
     tel_status.hdg        = mag_ok ? mag_heading : -1.0f;
+    tel_status.wp_dist    = wp_pending ? wp_out.dist : -1.0f;
     for (int i = 0; i < 4; i++) tel_status.mot[i] = motor_us[i];
   }
 

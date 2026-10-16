@@ -37,6 +37,7 @@ typedef struct {
   uint8_t  home_valid;   // 0/1
   float    hdg;          // 罗盘航向 deg
   uint16_t mot[4];       // 电机油门 µs
+  float    wp_dist;      // 航点剩余距离（米，-1 = 未激活）
 } tel_status_t;
 
 extern tel_status_t tel_status;

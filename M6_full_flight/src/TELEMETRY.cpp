@@ -7,6 +7,9 @@
  */
 #include "TELEMETRY.h"
 #include "LOGGER.h"
+#include "WAYPOINT.h"
+
+extern bool wp_pending;   // 主程序定义：航点请求标志
 #include <WiFi.h>
 #include <WebServer.h>
 #include <LittleFS.h>
@@ -126,6 +129,21 @@ static const char TEL_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html>
   </div>
 
   <div class="card" style="grid-column:span 2;">
+    <h3>航点飞行（WiFi 下发坐标）</h3>
+    <div class="gpsline" id="wpCur">当前位置 --</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0;">
+      <input id="wpLat" placeholder="目标纬度 如 25.2634" style="background:#0b0f16;border:1px solid #22303f;border-radius:6px;color:#dbe4f0;padding:7px;font-size:12px;">
+      <input id="wpLon" placeholder="目标经度 如 110.2900" style="background:#0b0f16;border:1px solid #22303f;border-radius:6px;color:#dbe4f0;padding:7px;font-size:12px;">
+      <input id="wpAlt" placeholder="高度(m) 1~120" value="30" style="background:#0b0f16;border:1px solid #22303f;border-radius:6px;color:#dbe4f0;padding:7px;font-size:12px;">
+      <div style="display:flex;gap:6px;">
+        <button onclick="wpStart()" style="flex:1;background:#16a34a;border:none;border-radius:8px;color:#fff;font-size:13px;">开始航点</button>
+        <button onclick="wpStop()" style="flex:1;background:#475569;border:none;border-radius:8px;color:#fff;font-size:13px;">取消</button>
+      </div>
+    </div>
+    <div class="st" id="wpStat">未激活（需已解锁 + GPS 定位）</div>
+  </div>
+
+  <div class="card" style="grid-column:span 2;">
     <h3>遥控通道 CH1~CH7</h3>
     <div id="rcRows"></div>
   </div>
@@ -185,6 +203,10 @@ function render(d){
   vSats.textContent=d.sats;
   vLat.textContent='纬度 '+(isFinite(d.lat)?d.lat.toFixed(5):'--');
   vLon.textContent='经度 '+(isFinite(d.lon)?d.lon.toFixed(5):'--');
+  var wpEl=document.getElementById('wpStat'),wpCur=document.getElementById('wpCur');
+  wpCur.textContent='当前位置 '+(isFinite(d.lat)?d.lat.toFixed(5)+', '+d.lon.toFixed(5):'--');
+  if(isFinite(d.wp)&&d.wp>=0){wpEl.textContent='航点执行中 · 剩余 '+d.wp.toFixed(1)+'m';wpEl.style.color='#7dd3fc';}
+  else{wpEl.textContent='未激活（需已解锁 + GPS 定位）';wpEl.style.color='#94a3b8';}
   rcRows.innerHTML='';
   for(var i=0;i<7;i++){
     var row=document.createElement('div');row.className='row';
@@ -222,6 +244,16 @@ async function pollLog(){
     }
   }catch(e){}
 }
+window.wpStart=function(){
+  var lat=parseFloat(document.getElementById('wpLat').value);
+  var lon=parseFloat(document.getElementById('wpLon').value);
+  var alt=parseFloat(document.getElementById('wpAlt').value);
+  if(isNaN(lat)||isNaN(lon)||isNaN(alt)){alert('请填写目标纬度/经度/高度');return;}
+  fetch('/wp?cmd=start&lat='+lat+'&lon='+lon+'&alt='+alt).then(function(r){return r.text();}).then(function(t){document.getElementById('wpStat').textContent=t;});
+};
+window.wpStop=function(){
+  fetch('/wp?cmd=stop').then(function(r){return r.text();}).then(function(t){document.getElementById('wpStat').textContent=t;});
+};
 window.toggleLog=function(){logOn=!logOn;document.getElementById('log').style.display=logOn?'block':'none';
   document.getElementById('btnLog').textContent=logOn?'隐藏日志':'显示日志';
   document.getElementById('btnLog').className=logOn?'off':'';pollLog();};
@@ -247,6 +279,30 @@ static void handle_root() {
   server.send_P(200, "text/html; charset=utf-8", TEL_PAGE);
 }
 
+/* ---- 路由：航点控制（WiFi 网页下发目标坐标）---- */
+static void handle_wp() {
+  String cmd = server.arg("cmd");
+  if (cmd == "stop") {
+    wp_pending = false;
+    wp_stop();
+    server.send(200, "text/plain", "WP_STOPPED");
+    return;
+  }
+  if (cmd == "start") {
+    float lat = server.arg("lat").toFloat();
+    float lon = server.arg("lon").toFloat();
+    float alt = server.arg("alt").toFloat();
+    if (wp_start(lat, lon, alt)) {
+      wp_pending = true;
+      server.send(200, "text/plain", "WP_STARTED");
+    } else {
+      server.send(400, "text/plain", "WP_BAD_ARGS");
+    }
+    return;
+  }
+  server.send(400, "text/plain", "WP_UNKNOWN");
+}
+
 /* ---- 路由：最新状态 JSON ---- */
 static void handle_api() {
   String j;
@@ -266,6 +322,7 @@ static void handle_api() {
   j += ",\"lon\":"; j += String(tel_status.gps_lon, 5);
   j += ",\"home\":"; j += tel_status.home_valid;
   j += ",\"hdg\":"; j += String(tel_status.hdg, 1);
+  j += ",\"wp\":"; j += String(tel_status.wp_dist, 1);
   j += ",\"mot\":[";
   for (int i = 0; i < 4; i++) { if (i) j += ','; j += tel_status.mot[i]; }
   j += "]}";
@@ -323,6 +380,7 @@ void telemetry_begin() {
   delay(100);
   server.on("/", handle_root);
   server.on("/api", handle_api);
+  server.on("/wp", handle_wp);
   server.on("/feed", handle_feed);
   server.on("/download", handle_download);
   server.begin();
