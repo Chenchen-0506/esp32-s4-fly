@@ -1,12 +1,15 @@
 /*
  * ============================================================================
- * WAYPOINT 航点飞行功能模块实现
+ * WAYPOINT 多航点航线飞行功能模块实现
  * 距离/方位计算与 RTL 同构（haversine + 方位角），目标点参数化
  * ============================================================================
  */
 #include "WAYPOINT.h"
 #include <math.h>
 
+static WP_Point wp_list[WP_MAX];
+static int     wp_count = 0;
+static int     wp_index = 0;
 static WP_Output out;
 
 static float rad(float deg) { return deg * PI / 180.0f; }
@@ -44,20 +47,31 @@ void wp_begin() {
   wp_stop();
 }
 
-bool wp_start(float lat, float lon, float alt) {
-  // 参数合法性：经纬度范围 + 高度范围
+bool wp_add_point(float lat, float lon, float alt) {
+  if (wp_count >= WP_MAX) return false;
   if (fabsf(lat) > 90.0f || fabsf(lon) > 180.0f) return false;
   if (alt < 1.0f || alt > 120.0f) return false;
-  out.mode = WP_IDLE;
-  out.tgt_lat = lat;
-  out.tgt_lon = lon;
-  out.tgt_alt = alt;
+  wp_list[wp_count].lat = lat;
+  wp_list[wp_count].lon = lon;
+  wp_list[wp_count].alt = alt;
+  wp_count++;
+  return true;
+}
+
+void wp_clear() {
+  wp_count = 0;
+  wp_index = 0;
+  wp_stop();
+}
+
+bool wp_start() {
+  if (wp_count == 0) return false;
+  out.mode = WP_IDLE;       // 由 wp_update 在 armed 下自动进入 CLIMB
+  wp_index = 0;
   out.dist = 0;
-  out.target_roll = 0;
-  out.target_pitch = 0;
-  out.target_yaw_rate = 0;
-  out.throttle_us = 1000;
-  return true;   // 模式由 wp_update 在 armed 下自动进入 CLIMB
+  out.index = 0;
+  out.total = wp_count;
+  return true;
 }
 
 void wp_stop() {
@@ -67,30 +81,51 @@ void wp_stop() {
   out.target_yaw_rate = 0;
   out.throttle_us = 1000;
   out.dist = 0;
+  out.index = -1;
+  out.total = 0;
 }
 
 bool wp_active() {
   return (out.mode != WP_IDLE);
 }
 
+int wp_index_now() {
+  return wp_active() ? out.index : -1;
+}
+
+int wp_count_now() {
+  return wp_count;
+}
+
+WP_Point wp_point(int i) {
+  WP_Point p = {0, 0, 0};
+  if (i >= 0 && i < wp_count) p = wp_list[i];
+  return p;
+}
+
 /* ============================================================================
  * wp_update：每控制环调用一次，产出当前指令
- *   首次调用（IDLE + armed）自动进入 CLIMB；CLIMB -> FLY -> ARRIVED
+ *   首次调用（IDLE + armed）自动进入 CLIMB；沿航线逐点推进
+ *   CLIMB -> FLY -> (到点) -> 下一航点 CLIMB ... -> 最后一个 -> ARRIVED 悬停
  * ========================================================================== */
 WP_Output wp_update(bool armed, float lat, float lon, float heading, float rel_alt) {
   if (!armed) { wp_stop(); return out; }
+  if (wp_count == 0) { wp_stop(); return out; }
 
-  out.dist = dist_xy(lat, lon, out.tgt_lat, out.tgt_lon);
+  WP_Point tgt = wp_list[wp_index];
+  out.index = wp_index;
+  out.total = wp_count;
+  out.dist = dist_xy(lat, lon, tgt.lat, tgt.lon);
 
   if (out.mode == WP_IDLE) out.mode = WP_CLIMB;
 
   switch (out.mode) {
     case WP_CLIMB: {
-      // 先爬升到目标高度
+      // 先爬升到当前航点高度
       out.target_roll = 0;
       out.target_pitch = 0;
       out.target_yaw_rate = 0;
-      if (rel_alt < out.tgt_alt - 1.0f) {
+      if (rel_alt < tgt.alt - 1.0f) {
         out.throttle_us = WP_CLIMB_THR;
       } else {
         out.mode = WP_FLY;
@@ -100,12 +135,12 @@ WP_Output wp_update(bool armed, float lat, float lon, float heading, float rel_a
     }
     case WP_FLY: {
       // 高度保持（同 RTL 三段油门）
-      if (rel_alt < out.tgt_alt - 1.5f)      out.throttle_us = WP_CLIMB_THR;
-      else if (rel_alt > out.tgt_alt + 1.5f) out.throttle_us = WP_DESCEND_THR;
-      else                                   out.throttle_us = WP_CRUISE_THR;
+      if (rel_alt < tgt.alt - 1.5f)      out.throttle_us = WP_CLIMB_THR;
+      else if (rel_alt > tgt.alt + 1.5f) out.throttle_us = WP_DESCEND_THR;
+      else                               out.throttle_us = WP_CRUISE_THR;
 
       // 机头对准目标方向
-      float b = bearing_xy(lat, lon, out.tgt_lat, out.tgt_lon);
+      float b = bearing_xy(lat, lon, tgt.lat, tgt.lon);
       float yaw_err = wrap180(b - heading);
       out.target_yaw_rate = WP_YAW_P * yaw_err;
       if (out.target_yaw_rate >  WP_YAW_RATE_MAX) out.target_yaw_rate =  WP_YAW_RATE_MAX;
@@ -118,7 +153,17 @@ WP_Output wp_update(bool armed, float lat, float lon, float heading, float rel_a
       out.target_pitch = pitch_cmd;
       out.target_roll  = 0;
 
-      if (out.dist < WP_NEAR) out.mode = WP_ARRIVED;
+      if (out.dist < WP_NEAR) {
+        // 到点：推进下一个航点；全部飞完进入悬停
+        if (wp_index < wp_count - 1) {
+          wp_index++;
+          out.mode = WP_CLIMB;
+          Serial.printf("[WP] 到达航点 %d/%d，前往下一航点\n", out.index + 1, out.total);
+        } else {
+          out.mode = WP_ARRIVED;
+          Serial.printf("[WP] 全部航点飞完（%d 个），悬停等待\n", out.total);
+        }
+      }
       break;
     }
     case WP_ARRIVED: {
@@ -126,9 +171,9 @@ WP_Output wp_update(bool armed, float lat, float lon, float heading, float rel_a
       out.target_roll = 0;
       out.target_pitch = 0;
       out.target_yaw_rate = 0;
-      if (rel_alt < out.tgt_alt - 1.5f)      out.throttle_us = WP_CLIMB_THR;
-      else if (rel_alt > out.tgt_alt + 1.5f) out.throttle_us = WP_DESCEND_THR;
-      else                                   out.throttle_us = WP_CRUISE_THR;
+      if (rel_alt < tgt.alt - 1.5f)      out.throttle_us = WP_CLIMB_THR;
+      else if (rel_alt > tgt.alt + 1.5f) out.throttle_us = WP_DESCEND_THR;
+      else                               out.throttle_us = WP_CRUISE_THR;
       break;
     }
     default:
