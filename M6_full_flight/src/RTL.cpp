@@ -61,6 +61,9 @@ void rtl_set_home(float lat, float lon) {
   }
 }
 
+float rtl_home_lat() { return home_lat; }
+float rtl_home_lon() { return home_lon; }
+
 bool rtl_home_valid() {
   return home_valid;
 }

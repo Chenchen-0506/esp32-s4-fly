@@ -617,6 +617,8 @@ void loop() {
     tel_status.gps_lat    = gps_lat;
     tel_status.gps_lon    = gps_lon;
     tel_status.home_valid = rtl_home_valid();
+    tel_status.home_lat   = rtl_home_valid() ? rtl_home_lat() : 0.0f;
+    tel_status.home_lon   = rtl_home_valid() ? rtl_home_lon() : 0.0f;
     tel_status.hdg        = mag_ok ? mag_heading : -1.0f;
     tel_status.wp_dist    = wp_pending ? wp_out.dist : -1.0f;
     for (int i = 0; i < 4; i++) tel_status.mot[i] = motor_us[i];

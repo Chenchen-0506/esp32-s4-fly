@@ -126,6 +126,7 @@ static const char TEL_PAGE[] PROGMEM = R"HTML(<!DOCTYPE html>
     <div class="pair"><span>星数</span><b id="vSats" style="color:#7dd3fc">--</b></div>
     <div class="gpsline" id="vLat">纬度 --</div>
     <div class="gpsline" id="vLon">经度 --</div>
+    <div class="gpsline" id="vHome" style="color:#fbbf24">home --</div>
   </div>
 
   <div class="card" style="grid-column:span 2;">
@@ -203,6 +204,8 @@ function render(d){
   vSats.textContent=d.sats;
   vLat.textContent='纬度 '+(isFinite(d.lat)?d.lat.toFixed(5):'--');
   vLon.textContent='经度 '+(isFinite(d.lon)?d.lon.toFixed(5):'--');
+  var vHome=document.getElementById('vHome');
+  vHome.textContent='home '+(d.home? d.homeLat.toFixed(5)+', '+d.homeLon.toFixed(5):'未记录（起飞后定位 1 分钟生成）');
   var wpEl=document.getElementById('wpStat'),wpCur=document.getElementById('wpCur');
   wpCur.textContent='当前位置 '+(isFinite(d.lat)?d.lat.toFixed(5)+', '+d.lon.toFixed(5):'--');
   if(isFinite(d.wp)&&d.wp>=0){wpEl.textContent='航点执行中 · 剩余 '+d.wp.toFixed(1)+'m';wpEl.style.color='#7dd3fc';}
@@ -321,6 +324,8 @@ static void handle_api() {
   j += ",\"lat\":"; j += String(tel_status.gps_lat, 5);
   j += ",\"lon\":"; j += String(tel_status.gps_lon, 5);
   j += ",\"home\":"; j += tel_status.home_valid;
+  j += ",\"homeLat\":"; j += String(tel_status.home_lat, 5);
+  j += ",\"homeLon\":"; j += String(tel_status.home_lon, 5);
   j += ",\"hdg\":"; j += String(tel_status.hdg, 1);
   j += ",\"wp\":"; j += String(tel_status.wp_dist, 1);
   j += ",\"mot\":[";

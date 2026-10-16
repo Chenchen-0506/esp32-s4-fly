@@ -57,6 +57,8 @@ typedef struct {
 void    rtl_begin();                    // 初始化（清状态）
 void    rtl_set_home(float lat, float lon);  // 记录起飞点（解锁时调用）
 bool    rtl_home_valid();               // home 点是否已记录
+float   rtl_home_lat();                  // home 纬度（未记录返回 0）
+float   rtl_home_lon();                  // home 经度（未记录返回 0）
 float   rtl_dist_to_home(float lat, float lon); // 距 home 距离（米）
 void    rtl_reset();                    // 复位到 IDLE
 RTL_Output rtl_update(bool armed, bool rc_lost,

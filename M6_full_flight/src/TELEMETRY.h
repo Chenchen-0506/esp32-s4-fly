@@ -35,6 +35,8 @@ typedef struct {
   float    gps_lat;
   float    gps_lon;
   uint8_t  home_valid;   // 0/1
+  float    home_lat;     // home 纬度
+  float    home_lon;     // home 经度
   float    hdg;          // 罗盘航向 deg
   uint16_t mot[4];       // 电机油门 µs
   float    wp_dist;      // 航点剩余距离（米，-1 = 未激活）
