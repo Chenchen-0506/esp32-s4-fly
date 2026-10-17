@@ -69,6 +69,7 @@
 #include "src/VERTEST.h"   // 垂直融合（加速度+气压互补：融合高度/垂速）
 #include "src/LOGGER.h"    // 飞行黑匣子（RAM 环形 + Flash 落盘，串口 D 导出）
 #include "src/TELEMETRY.h" // WiFi 实时看板（手机连热点浏览器查看/下载）
+#include "src/LINK.h"     // 数传链路（UART1：TX=14 RX=15，57600）
 
 /* ============================================================================
  * 控制环常量
@@ -228,6 +229,8 @@ void setup() {
   // ---- 黑匣子 + WiFi 看板初始化 ----
   logger_begin();
   telemetry_begin();
+  link_begin();
+  Serial.println("[LINK] 数传就绪：UART1 GPIO14(TX)/15(RX) 57600（10Hz 遥测上行，命令下行）");
 
   Serial.println("⚠ 首次测试务必拆桨！");
 }
@@ -240,6 +243,22 @@ void loop() {
   if (Serial.available()) {
     char c = (char)Serial.read();
     if (c == 'D' || c == 'd') logger_dump_all();
+  }
+
+  // ---- 数传命令下行：航点/日志请求（地面站 → 433MHz → UART1）----
+  {
+    String lnk;
+    while (link_read_line(lnk)) {
+      if (lnk == "D" || lnk == "d") {
+        char lb[LOG_LINE_LEN];
+        uint32_t seqx = logger_seq();
+        for (uint32_t ss = (seqx > 10) ? seqx - 9 : 1; ss <= seqx; ss++) {
+          if (logger_line_at(ss, lb)) link_send(String(lb));
+        }
+      } else {
+        tel_wp_cmd(lnk);
+      }
+    }
   }
 
   static uint32_t tLast = 0;
@@ -634,6 +653,11 @@ void loop() {
     tel_status.hdg        = mag_ok ? mag_heading : -1.0f;
     tel_status.wp_dist    = wp_pending ? wp_out.dist : -1.0f;
     for (int i = 0; i < 4; i++) tel_status.mot[i] = motor_us[i];
+
+    // ---- 遥测传输：USB(Type-C,115200) + 数传(UART1,57600)，10Hz ----
+    String js = tel_build_json();
+    Serial.println(js);
+    link_send(js);
   }
 
   // ---- 9. 黑匣子节拍 + WiFi 看板服务 ----

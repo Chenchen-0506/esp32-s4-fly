@@ -47,4 +47,8 @@ extern tel_status_t tel_status;
 void telemetry_begin();   // 开热点 + 启动 Web 服务（setup 调用一次）
 void telemetry_poll();    // 主循环调用（内部处理 HTTP，开销小）
 
+/* ---- 数传/串口共用接口（USB 与 UART1 复用同一份 JSON 与命令） ---- */
+String tel_build_json(void);             // 组装最新遥测 JSON 行（/api、USB、数传三路共用）
+bool   tel_wp_cmd(const String &line);   // 解析下行命令（WP:ADD/CLEAR/START/STOP），已处理返回 true
+
 #endif

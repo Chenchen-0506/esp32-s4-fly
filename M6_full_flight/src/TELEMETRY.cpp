@@ -362,48 +362,43 @@ static void handle_root() {
   server.send_P(200, "text/html; charset=utf-8", TEL_PAGE);
 }
 
-/* ---- 路由：航点航线控制（WiFi 网页下发，多航点）---- */
+/* ---- 路由：航点航线控制（WiFi 网页 / 数传下行共用）---- */
 static void handle_wp() {
-  String cmd = server.arg("cmd");
-  if (cmd == "add") {
-    float lat = server.arg("lat").toFloat();
-    float lon = server.arg("lon").toFloat();
-    float alt = server.arg("alt").toFloat();
-    if (wp_add_point(lat, lon, alt)) {
-      server.send(200, "text/plain", "WP_ADDED");
-    } else {
-      server.send(400, "text/plain", "WP_LIST_FULL_OR_BAD");
-    }
-    return;
+  String line = "WP:" + server.arg("cmd");
+  if (server.hasArg("lat") && server.hasArg("lon")) {
+    line += "," + server.arg("lat") + "," + server.arg("lon");
+    if (server.hasArg("alt")) line += "," + server.arg("alt");
   }
-  if (cmd == "clear") {
-    wp_clear();
-    wp_pending = false;
-    server.send(200, "text/plain", "WP_CLEARED");
-    return;
-  }
-  if (cmd == "start") {
-    if (wp_start()) {
-      wp_pending = true;
-      server.send(200, "text/plain", "WP_STARTED");
-    } else {
-      server.send(400, "text/plain", "WP_EMPTY_LIST");
-    }
-    return;
-  }
-  if (cmd == "stop") {
-    wp_pending = false;
-    wp_stop();
-    server.send(200, "text/plain", "WP_STOPPED");
-    return;
-  }
-  server.send(400, "text/plain", "WP_UNKNOWN");
+  if (tel_wp_cmd(line)) server.send(200, "text/plain", "OK");
+  else server.send(400, "text/plain", "BAD");
 }
 
-/* ---- 路由：最新状态 JSON ---- */
-static void handle_api() {
+/* ---- 下行命令统一解析（WiFi handle_wp 与 UART1 数传共用）---- */
+bool tel_wp_cmd(const String &line) {
+  String l = line;
+  l.trim();
+  if (l.startsWith("WP:ADD")) {
+    int c1 = l.indexOf(',');
+    if (c1 < 0) return false;
+    int c2 = l.indexOf(',', c1 + 1);
+    if (c2 < 0) return false;
+    float lat = l.substring(c1 + 1, c2).toFloat();
+    float lon = l.substring(c2 + 1).toFloat();
+    int   c3 = l.indexOf(',', c2 + 1);
+    float alt = (c3 > 0) ? l.substring(c2 + 1, c3).toFloat() : l.substring(c2 + 1).toFloat();
+    if (lat == 0 && lon == 0) return false;
+    return wp_add_point(lat, lon, alt);
+  }
+  if (l == "WP:CLEAR") { wp_clear(); wp_pending = false; return true; }
+  if (l == "WP:START") { if (wp_start()) { wp_pending = true; return true; } return false; }
+  if (l == "WP:STOP")  { wp_pending = false; wp_stop(); return true; }
+  return false;
+}
+
+/* ---- 最新状态 JSON（/api、USB、数传三路共用）---- */
+String tel_build_json() {
   String j;
-  j.reserve(300);
+  j.reserve(400);
   j = "{\"t\":"; j += (uint32_t)millis();
   j += ",\"armed\":"; j += tel_status.armed;
   j += ",\"mode\":\""; j += tel_status.mode; j += "\"";
@@ -434,11 +429,15 @@ static void handle_api() {
       j += "[0,0,0]";
     }
   }
-  j += "]";
-  j += ",\"mot\":[";
+  j += "],\"mot\":[";
   for (int i = 0; i < 4; i++) { if (i) j += ','; j += tel_status.mot[i]; }
   j += "]}";
-  server.send(200, "application/json", j);
+  return j;
+}
+
+/* ---- 路由：最新状态 JSON ---- */
+static void handle_api() {
+  server.send(200, "application/json", tel_build_json());
 }
 
 /* ---- 路由：增量日志 ---- */

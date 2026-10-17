@@ -47,6 +47,7 @@ M6_full_flight/
     ├── VERTEST.h/.cpp        # 垂直融合（1D 互补：加速度预测 1kHz + 气压修正 10Hz）
     ├── LOGGER.h/.cpp         # 黑匣子（RAM 环形 512 行 + LittleFS 落盘，串口 D 导出）
     └── TELEMETRY.h/.cpp      # WiFi 仪表盘（softAP 热点，姿态/高度/航向/GPS/RC/电机）
+    ├── LINK.h/.cpp         # 433MHz 数传链路（UART1：10Hz 遥测上行 + WP/D 命令下行）
 ```
 
 ## 功能总览（v0.17）
@@ -140,6 +141,18 @@ M6_full_flight/
 - 手机连热点 → 浏览器打开 **`http://192.168.4.1`**：姿态球 + 高度/航向/GPS/遥控通道/电机油门仪表（500ms 刷新），日志滚动可下载
 - 完全无需 USB，适合外场悬停/试飞观测
 
+### 433MHz 数传链路（LINK，v0.18 新增）
+
+- **接线**（机载）：主控 `GPIO14(TX)` → 机载数传模块 RX；主控 `GPIO15(RX)` ← 机载数传模块 TX；数传 5V/GND 供电（与分电板 UBEC 同源）
+- **波特率**：`57600` 8N1（UART1，引脚宏在 `src/LINK.h`，与地面端默认一致）
+- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/wp/wpIndex/wpTotal/wpList[8]/mot[4]`）
+- **下行命令**：地面站发一行即可
+  - `WP:ADD,lat,lon,alt` 添加航点（alt 省略默认 30m）
+  - `WP:CLEAR` 清空航线 / `WP:START` 开始 / `WP:STOP` 停止
+  - `D` 回传最近 10 行黑匣子日志
+- **USB 同步输出**：同一份 JSON 也打到 `Serial`（115200），Type-C 连电脑后地面站用 **Web Serial** 直读，无需数传即可联调
+- **路线**：数传联调通过后，WiFi 仪表盘（TELEMETRY Web 服务）将删除，**只留数传**（用户已确认）
+
 ### 参数调节
 
 - 返航参数集中在 `src/RTL.h`；定高/悬停参数在 `src/ALTHOLD.h` / `src/POSHOLD.h`；垂直融合在 `src/VERTEST.h`；内环 PID 在 `src/PID.h`，外环角度增益在主程序开头 `ANGLE_P_*`
@@ -210,8 +223,8 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
 
 | # | 计划项 | 内容 | 状态 |
 |---|--------|------|------|
-| 1 | 433MHz 数传 + HTML 地面站 | 3DR/Holybro SiK 433MHz 串口数传（机载 UART1）；TELEMETRY 加串口遥测输出与命令帧监听（WP:ADD/START/STOP 等，复用 wp_*）；地面端 Web Serial 读取 + 网页地面站（姿态/GPS/航点/航图，逻辑沿用 WiFi 仪表盘）；WiFi/数传二选一开关 | 计划中 |
+| 1 | 433MHz 数传 + HTML 地面站 | 已落地：LINK 模块（UART1 57600）10Hz JSON 上行 + WP:ADD/CLEAR/START/STOP/D 命令下行；USB 同路输出（Web Serial 可读）；地面站地图（高德+Esri）与航点控制已就绪；vspd/spd 字段待补 | 已实现（v0.18） |
 | 2 | 图传 + 地面接收 | 5.8G 图传（模拟或数字）；地面用手机/FPV 眼镜查看实时画面；飞行数据叠加（OSD）可选 | 计划中 |
 | 3 | 定高/悬停触发方案 | FS-iA6B 仅 6 通道、无物理 CH7：定高/悬停（ALTHOLD/POSHOLD）暂不可开关触发，待定替代方案（如解锁后油门中位保持等） | 待定 |
 
-> 数传与 WiFi 看板二选一运行（同一份遥测数据只走一个出口）；数传链路：飞控 UART1 → 机载数传(433MHz) → 地面数传 USB → 电脑 Chrome → 网页地面站，范围 1~3km 视距。
+> 数传链路：飞控 UART1 → 机载数传(433MHz) → 地面数传 USB → 电脑 Chrome → 网页地面站，范围 1~3km 视距。WiFi 看板为过渡方案，数传联调通过后删除，只留数传。
