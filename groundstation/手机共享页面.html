@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>S4Fly 手机遥测</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif;background:#0d1219;color:#dbe4f0;}
+.wrap{max-width:560px;margin:0 auto;padding:10px;}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;}
+h1{font-size:16px;margin:0;} h1 b{color:#38bdf8;}
+.st{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;}
+.dot{width:10px;height:10px;border-radius:50%;background:#475569;}
+.dot.on{background:#22c55e;box-shadow:0 0 8px #22c55e;}
+.dot.warn{background:#f59e0b;}
+.badge{padding:2px 8px;border-radius:6px;background:#1e293b;font-size:12px;font-weight:600;}
+.badge.armed{background:#16a34a;} .badge.rtl{background:#f59e0b;} .badge.pos{background:#7c3aed;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.card{background:#141c26;border:1px solid #1f2c3d;border-radius:12px;padding:10px;}
+.card h3{font-size:10px;color:#8aa0b8;margin:0 0 6px;letter-spacing:.8px;}
+.big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;}
+.unit{font-size:11px;color:#8aa0b8;font-weight:400;margin-left:2px;}
+.pair{display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-top:5px;}
+.pair b{color:#7dd3fc;font-variant-numeric:tabular-nums;}
+.gpsline{font-size:11px;color:#94a3b8;margin-top:3px;font-variant-numeric:tabular-nums;}
+.ai{width:100%;display:block;}
+.wide{grid-column:1/-1;}
+#mapWrap{position:relative;}
+#map{height:300px;border-radius:10px;overflow:hidden;background:#0a0f16;}
+.legend{position:absolute;left:8px;bottom:22px;background:rgba(13,18,25,.88);border:1px solid #26354a;border-radius:8px;
+        padding:5px 8px;font-size:10px;color:#cbd5e1;line-height:1.9;z-index:1000;pointer-events:none;}
+.legend .lg{display:inline-block;width:12px;height:12px;margin-right:5px;vertical-align:-2px;}
+.lg-drone{background:#22c55e;clip-path:polygon(50% 0,100% 100%,0 100%);border-radius:2px;}
+.lg-home{background:#ef4444;border-radius:50%;}
+.lg-wp{background:#38bdf8;border-radius:50%;}
+.lg-trk{height:3px;border-radius:2px;background:#38bdf8;vertical-align:middle;}
+.wpstat{font-size:11px;margin-top:4px;}
+.wpstat.go{color:#7dd3fc;} .wpstat.wait{color:#fbbf24;} .wpstat.idle{color:#94a3b8;}
+.foot{text-align:center;font-size:10px;color:#64748b;margin-top:8px;}
+@media(max-width:380px){.grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1><b>S4Fly</b> 手机遥测</h1>
+  </div>
+  <div class="st">
+    <span id="sDot" class="dot"></span><span id="sTxt">连接中…</span>
+    <span id="armTxt" style="font-size:11px;">--</span>
+    <span id="modeBadge" class="badge">--</span>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="card wide">
+    <h3>姿态</h3>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <svg id="ai" class="ai" viewBox="0 0 220 180" style="max-width:150px;">
+        <defs><clipPath id="aiClip"><circle cx="110" cy="90" r="82"/></clipPath></defs>
+        <circle cx="110" cy="90" r="82" fill="#0a0f16" stroke="#1f2c3d" stroke-width="2"/>
+        <g clip-path="url(#aiClip)">
+          <g id="aiRoll" transform="translate(110,90)">
+            <g id="aiPitch">
+              <rect x="-200" y="-240" width="400" height="240" fill="#0e2a4a"/>
+              <rect x="-200" y="0" width="400" height="240" fill="#1a2733"/>
+              <line x1="-200" y1="0" x2="200" y2="0" stroke="#7dd3fc" stroke-width="2"/>
+              <line x1="-200" y1="-30" x2="200" y2="-30" stroke="#2c4056" stroke-width="1" stroke-dasharray="5 9"/>
+              <line x1="-200" y1="30" x2="200" y2="30" stroke="#2c4056" stroke-width="1" stroke-dasharray="5 9"/>
+            </g>
+          </g>
+        </g>
+        <g stroke="#94a3b8" stroke-width="1.4">
+          <line x1="110" y1="2" x2="110" y2="13"/><line x1="110" y1="167" x2="110" y2="178"/>
+          <line x1="16" y1="90" x2="27" y2="90"/><line x1="193" y1="90" x2="204" y2="90"/>
+          <path d="M110 6 L117 13 L103 13 Z" fill="#94a3b8" stroke="none"/>
+        </g>
+        <path id="ship" d="M110 74 L121 88 L99 88 Z" fill="none" stroke="#fbbf24" stroke-width="2"/>
+        <circle cx="110" cy="90" r="2.6" fill="#fbbf24"/>
+      </svg>
+      <div style="flex:1;font-size:12px;">
+        <div class="pair"><span>横滚</span><b id="vRoll">--</b></div>
+        <div class="pair"><span>俯仰</span><b id="vPitch">--</b></div>
+        <div class="pair"><span>偏航</span><b id="vYaw">--</b></div>
+        <div class="pair"><span>航向</span><b id="vHdg">--</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>高度</h3>
+    <div class="big"><span id="vAlt">--</span><span class="unit">m</span></div>
+    <div class="pair"><span>垂直速度</span><b id="vVspd">--</b></div>
+    <div class="pair"><span>速度</span><b id="vSpd">--</b></div>
+  </div>
+
+  <div class="card">
+    <h3>航向 / HOME</h3>
+    <div class="pair"><span>距HOME</span><b id="vHomeDist">--</b></div>
+    <div class="pair"><span>剩余航点</span><b id="vWpDist">--</b></div>
+    <div class="gpsline" id="vHome">home --</div>
+  </div>
+
+  <div class="card wide">
+    <h3>GPS</h3>
+    <div class="pair"><span>星数</span><b id="vSats">--</b></div>
+    <div class="gpsline" id="vLat">纬度 --</div>
+    <div class="gpsline" id="vLon">经度 --</div>
+  </div>
+
+  <div class="card wide">
+    <h3>地图 · 实时位置 / 轨迹 / HOME</h3>
+    <div class="st" style="margin-bottom:6px;"><span id="trkCnt">轨迹 0 点</span></div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div class="legend">
+        <div><span class="lg lg-drone"></span>飞机位置</div>
+        <div><span class="lg lg-home"></span>HOME 起飞点</div>
+        <div><span class="lg lg-wp"></span>航点</div>
+        <div><span class="lg lg-trk"></span>飞行轨迹</div>
+      </div>
+    </div>
+    <div class="wpstat idle" id="wpStat">航点状态 --</div>
+  </div>
+</div>
+
+<div class="foot">S4Fly 手机遥测 · 数据经电脑数传地面站中转</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var sDot=$('sDot'),sTxt=$('sTxt');
+/* file:// 本地预览走 localhost；手机通过 http://IP:8787 访问时用相对路径 */
+var API_BASE=(location.protocol==='file:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8787':'';
+var RC_LBL=['ROLL','PITCH','THR','YAW','ARM','RTL','POS'];
+var DIRS=['N','NE','E','SE','S','SW','W','NW'];
+var aiRoll=$('aiRoll'),aiPitch=$('aiPitch');
+var lastAge=0, connected=false;
+
+/* 地图 */
+var map=null, droneMk=null, homeMk=null, trkLine=null;
+var track=[], mapReady=false;
+var TILES=[
+  {url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',sub:'1234'},
+  {url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',sub:''}
+];
+var srcIdx=0, tileErr=0, tileLayer=null;
+function switchTile(){
+  srcIdx=(srcIdx+1)%TILES.length;
+  var t=TILES[srcIdx], opts={maxZoom:18};
+  if(t.sub) opts.subdomains=t.sub;
+  if(tileLayer) map.removeLayer(tileLayer);
+  tileErr=0;
+  tileLayer=L.tileLayer(t.url,opts).addTo(map);
+  tileLayer.on('tileerror',function(){ tileErr++; if(tileErr>=4) switchTile(); });
+}
+function initMap(){
+  if(!window.L) return;
+  map=L.map('map').setView([25.26,110.28],15);
+  switchTile();
+  /* 初始视野：浏览器定位到用户实际位置（没数据时）；拒绝则保留默认 */
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(pos){
+      map.setView([pos.coords.latitude,pos.coords.longitude],15);
+    },function(){},{timeout:4000});
+  }
+  droneMk=L.marker([25.26,110.28],{icon:L.divIcon({className:'mk-drone',html:'<svg width="24" height="24" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})}).addTo(map);
+  homeMk=L.circleMarker([25.26,110.28],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
+  trkLine=L.polyline([],{color:'#38bdf8',weight:2,dashArray:'6 4'}).addTo(map);
+  mapReady=true;
+}
+if(window.L) initMap();
+else{ var iv=setInterval(function(){ if(window.L){clearInterval(iv);initMap();} },200); setTimeout(function(){clearInterval(iv);},8000); }
+
+function updateMap(lat,lon,home){
+  if(!mapReady||!isFinite(lat)) return;
+  droneMk.setLatLng([lat,lon]);
+  track.push([lat,lon]); if(track.length>600) track.shift();
+  trkLine.setLatLngs(track);
+  $('trkCnt').textContent='轨迹 '+track.length+' 点';
+  map.panTo([lat,lon]);
+  if(home&&isFinite(home[0])) homeMk.setLatLng([home[0],home[1]]);
+}
+function haversine(lat1,lon1,lat2,lon2){
+  var R=6371000,toRad=Math.PI/180;
+  var dLat=(lat2-lat1)*toRad,dLon=(lon2-lon1)*toRad;
+  var a=Math.sin(dLat/2)**2+Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function render(d){
+  var r=isFinite(d.roll)?d.roll:0, p=isFinite(d.pitch)?d.pitch:0;
+  var pr=Math.max(-60,Math.min(60,-p*1.8));
+  aiRoll.setAttribute('transform','translate(110,90) rotate('+r+')');
+  aiPitch.setAttribute('transform','translate(0,'+pr+')');
+  $('vRoll').textContent=r.toFixed(1); $('vPitch').textContent=p.toFixed(1);
+  $('vYaw').textContent=isFinite(d.yaw)?d.yaw.toFixed(1):'--';
+  var h=isFinite(d.hdg)?d.hdg:-1;
+  $('vHdg').textContent=h>=0?h.toFixed(0)+'° ('+DIRS[Math.floor(((h+22.5)%360)/45)]+')':'--';
+  $('vAlt').textContent=(isFinite(d.alt)?d.alt:0).toFixed(1);
+  $('vVspd').textContent=(isFinite(d.vspd)?d.vspd:0).toFixed(1)+' m/s';
+  $('vSpd').textContent=(isFinite(d.spd)?d.spd:0).toFixed(1)+' m/s';
+  $('vSats').textContent=d.sats;
+  $('vLat').textContent='纬度 '+(isFinite(d.lat)?d.lat.toFixed(5):'--');
+  $('vLon').textContent='经度 '+(isFinite(d.lon)?d.lon.toFixed(5):'--');
+  $('vHome').textContent='home '+(d.home&&isFinite(d.homeLat)?d.homeLat.toFixed(5)+', '+d.homeLon.toFixed(5):'未记录');
+  if(d.home&&isFinite(d.homeLat)&&isFinite(d.lat))
+    $('vHomeDist').textContent=haversine(d.lat,d.lon,d.homeLat,d.homeLon).toFixed(0)+' m';
+  else $('vHomeDist').textContent='--';
+  $('vWpDist').textContent=(isFinite(d.wp)&&d.wp>=0)?d.wp.toFixed(1)+' m':'--';
+  updateMap(d.lat,d.lon,d.home?[d.homeLat,d.homeLon]:null);
+  var wpEl=$('wpStat');
+  if(d.wpTotal>0&&isFinite(d.wp)&&d.wp>=0){ wpEl.textContent='航线执行中 · 目标 '+(d.wpIndex+1)+'/'+d.wpTotal+' · 剩余 '+d.wp.toFixed(1)+'m'; wpEl.className='wpstat go'; }
+  else if(d.wpTotal>0){ wpEl.textContent='已设置 '+d.wpTotal+' 个航点 · 未开始'; wpEl.className='wpstat wait'; }
+  else { wpEl.textContent='航点未激活'; wpEl.className='wpstat idle'; }
+  var a=$('armTxt'); a.textContent=d.armed?'解锁':'上锁';
+  var mb=$('modeBadge'); mb.textContent=d.mode;
+  mb.className='badge'+(d.mode.indexOf('RTL')===0?' rtl':(d.mode==='POSHOLD'?' pos':(d.armed?'armed':'')));
+}
+
+async function tick(){
+  try{
+    var r=await fetch(API_BASE+'/api',{cache:'no-store'});
+    if(!r.ok) throw 0;
+    var d=await r.json();
+    if(d&&d.t){ lastAge=0; render(d); }
+  }catch(e){ lastAge++; }
+  if(lastAge>5){
+    sDot.className='dot warn'; sTxt.textContent=lastAge>30?'无数据(检查服务器/数传)':'等待数据…';
+  }else{
+    sDot.className='dot on'; sTxt.textContent='数据正常';
+  }
+}
+setInterval(tick,1000);
+tick();
+})();
+</script>
+</body>
+</html>

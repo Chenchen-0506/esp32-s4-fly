@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>S4Fly 数传地面站</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif;background:#0d1219;color:#dbe4f0;min-height:100vh;}
+.wrap{max-width:1280px;margin:0 auto;padding:12px;}
+
+/* ===== 顶栏 ===== */
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+h1{font-size:18px;margin:0;letter-spacing:.3px;}
+h1 b{color:#38bdf8;}
+.sub{font-size:11px;color:#8aa0b8;margin-top:2px;}
+.conn{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.dot{width:11px;height:11px;border-radius:50%;background:#475569;flex:none;}
+.dot.offline{background:#475569;}
+.dot.on{background:#22c55e;box-shadow:0 0 8px #22c55e;}
+.dot.link{background:#f59e0b;box-shadow:0 0 8px #f59e0b;}
+select,input,button{font-family:inherit;}
+select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8px;padding:6px 8px;font-size:13px;}
+.btn{border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#fff;background:#2563eb;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn.off{background:#475569;}
+.btn.danger{background:#b91c1c;}
+.btn.green{background:#16a34a;}
+.btn.sm{padding:5px 10px;font-size:12px;border-radius:6px;}
+#connState{font-size:12px;color:#94a3b8;min-width:120px;}
+
+/* ===== 状态徽章 ===== */
+.badge{padding:2px 10px;border-radius:6px;background:#1e293b;font-size:12px;font-weight:600;}
+.badge.armed{background:#16a34a;}
+.badge.rtl{background:#f59e0b;}
+.badge.pos{background:#7c3aed;}
+
+/* ===== 主网格 ===== */
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;}
+.card{background:#141c26;border:1px solid #1f2c3d;border-radius:12px;padding:12px;}
+.card h3{font-size:11px;color:#8aa0b8;margin:0 0 8px;letter-spacing:.8px;}
+.big{font-size:clamp(24px,4vw,34px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;}
+.unit{font-size:12px;color:#8aa0b8;font-weight:400;margin-left:3px;}
+.pair{display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-top:6px;}
+.pair b{color:#7dd3fc;font-variant-numeric:tabular-nums;}
+.gpsline{font-size:12px;font-variant-numeric:tabular-nums;color:#94a3b8;margin-top:4px;}
+.altbar{position:relative;height:84px;background:linear-gradient(180deg,#0a0f16,#101c2a);border-radius:8px;overflow:hidden;margin-top:8px;}
+.altbar .fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0ea5e9,#22c55e);}
+.altbar .zero{position:absolute;left:0;right:0;height:1px;background:#64748b;}
+.altbar .tm{position:absolute;left:6px;top:6px;font-size:10px;color:#64748b;}
+.row{display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:4px;}
+.row .lbl{width:34px;color:#8aa0b8;font-weight:600;flex:none;}
+.row .val{width:46px;text-align:right;font-variant-numeric:tabular-nums;color:#7dd3fc;flex:none;}
+.bar{flex:1;height:8px;background:#0b111a;border-radius:4px;position:relative;}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#2563eb;}
+.bar .mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#64748b;}
+.ai{width:100%;display:block;}
+
+/* 列宽分配 */
+.c-3{grid-column:span 3;}
+.c-4{grid-column:span 4;}
+.c-6{grid-column:span 6;}
+.c-9{grid-column:span 9;}
+.c-12{grid-column:span 12;}
+@media(max-width:900px){.c-3,.c-4,.c-6,.c-9{grid-column:span 12;}}
+
+/* ===== 地图 ===== */
+#mapWrap{position:relative;}
+#map{height:420px;border-radius:10px;overflow:hidden;background:#0a0f16;}
+.legend{position:absolute;left:10px;bottom:26px;background:rgba(13,18,25,.88);border:1px solid #26354a;border-radius:8px;
+        padding:6px 10px;font-size:11px;color:#cbd5e1;line-height:2;z-index:1000;pointer-events:none;}
+.legend .lg{display:inline-block;width:13px;height:13px;margin-right:6px;vertical-align:-2px;}
+.lg-drone{background:#22c55e;clip-path:polygon(50% 0,100% 100%,0 100%);border-radius:2px;}
+.lg-home{background:#ef4444;border-radius:50%;}
+.lg-wp{background:#38bdf8;border-radius:50%;}
+.lg-trk{height:3px;border-radius:2px;background:#38bdf8;vertical-align:middle;}
+.maph{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.maph .st{font-size:11px;color:#94a3b8;}
+.mk-drone{background:transparent;border:none;}
+.mk-drone svg{filter:drop-shadow(0 0 6px #22c55e);}
+.leaflet-container{font-family:inherit;}
+.leaflet-control-attribution{font-size:9px;}
+
+/* ===== 航点 ===== */
+.wpinputs{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin:6px 0;}
+.wpinputs input{background:#0b111a;border:1px solid #26354a;border-radius:8px;color:#dbe4f0;padding:7px;font-size:12px;min-width:0;}
+.wpbtns{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;}
+.wpstat{font-size:12px;}
+.wpstat.go{color:#7dd3fc;} .wpstat.wait{color:#fbbf24;} .wpstat.idle{color:#94a3b8;}
+.wplist{font-size:11px;color:#8aa0b8;margin-top:6px;line-height:1.8;font-variant-numeric:tabular-nums;}
+
+/* ===== 日志 ===== */
+.logbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.logbar .btn{flex:1;min-width:110px;}
+#log{background:#0a0f16;border:1px solid #1f2c3d;border-radius:10px;padding:8px;margin-top:8px;
+     height:150px;overflow-y:auto;font-family:Consolas,'Courier New',monospace;font-size:11px;
+     white-space:pre-wrap;word-break:break-all;display:none;}
+#log .rowline{color:#94a3b8;}
+#log .jline{color:#4ade80;}
+#log .eline{color:#f87171;}
+
+/* 连接提示 */
+.tip{background:#141c26;border:1px solid #26354a;border-radius:10px;padding:10px 14px;font-size:12px;color:#8aa0b8;margin-bottom:10px;display:none;}
+.tip b{color:#fbbf24;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1><b>S4Fly</b> 数传地面站</h1>
+    <div class="sub">433MHz 数传 · 飞控 UART1 · 电脑 Chrome/Edge 打开即用</div>
+  </div>
+  <div class="conn">
+    <span id="connState">未连接</span>
+    <select id="baud">
+      <option value="57600" selected>57600</option>
+      <option value="115200">115200</option>
+      <option value="38400">38400</option>
+      <option value="19200">19200</option>
+      <option value="9600">9600</option>
+    </select>
+    <button id="btnConn" class="btn" onclick="connToggle()">连接串口</button>
+    <span id="linkDot" class="dot offline"></span><span id="linkTxt" style="font-size:12px;color:#94a3b8;">等待数据</span>
+    <span id="armDot" class="dot offline"></span><span id="armTxt" style="font-size:12px;color:#94a3b8;">上锁</span>
+    <span id="modeBadge" class="badge">MANU</span>
+    <button id="btnShare" class="btn off" onclick="toggleShare()">共享到手机</button>
+    <span id="shareTxt" style="font-size:11px;color:#fbbf24;max-width:300px;"></span>
+  </div>
+</header>
+
+<div class="tip" id="tipNoSerial">
+  <b>浏览器不支持串口。</b>请用 <b>Chrome 或 Edge</b> 打开本页面（其他浏览器没有 Web Serial 功能）。
+</div>
+
+<div class="grid">
+
+  <!-- 姿态 -->
+  <div class="card c-6">
+    <h3>姿态</h3>
+    <svg id="ai" class="ai" viewBox="0 0 220 180">
+      <defs><clipPath id="aiClip"><circle cx="110" cy="90" r="82"/></clipPath></defs>
+      <circle cx="110" cy="90" r="82" fill="#0a0f16" stroke="#1f2c3d" stroke-width="2"/>
+      <g clip-path="url(#aiClip)">
+        <g id="aiRoll" transform="translate(110,90)">
+          <g id="aiPitch">
+            <rect id="sky" x="-200" y="-240" width="400" height="240" fill="#0e2a4a"/>
+            <rect id="gnd" x="-200" y="0" width="400" height="240" fill="#1a2733"/>
+            <line x1="-200" y1="0" x2="200" y2="0" stroke="#7dd3fc" stroke-width="2"/>
+            <line x1="-200" y1="-30" x2="200" y2="-30" stroke="#2c4056" stroke-width="1" stroke-dasharray="5 9"/>
+            <line x1="-200" y1="30" x2="200" y2="30" stroke="#2c4056" stroke-width="1" stroke-dasharray="5 9"/>
+          </g>
+        </g>
+      </g>
+      <g stroke="#94a3b8" stroke-width="1.4">
+        <line x1="110" y1="2" x2="110" y2="13"/><line x1="110" y1="167" x2="110" y2="178"/>
+        <line x1="16" y1="90" x2="27" y2="90"/><line x1="193" y1="90" x2="204" y2="90"/>
+        <path d="M110 6 L117 13 L103 13 Z" fill="#94a3b8" stroke="none"/>
+      </g>
+      <path id="ship" d="M110 74 L121 88 L99 88 Z" fill="none" stroke="#fbbf24" stroke-width="2"/>
+      <circle cx="110" cy="90" r="2.6" fill="#fbbf24"/>
+    </svg>
+    <div class="pair"><span>横滚 <b id="vRoll">0.0</b>°</span><span>俯仰 <b id="vPitch">0.0</b>°</span><span>偏航 <b id="vYaw">0.0</b>°</span></div>
+  </div>
+
+  <!-- 高度 -->
+  <div class="card c-3">
+    <h3>高度（相对起飞点）</h3>
+    <div class="big"><span id="vAlt">0.0</span><span class="unit">m</span></div>
+    <div class="altbar">
+      <span class="tm">120m 上限</span>
+      <div class="zero" id="altZero" style="bottom:0"></div>
+      <div class="fill" id="altFill"></div>
+    </div>
+    <div class="pair"><span>垂直速度</span><b id="vVspd">--</b></div>
+  </div>
+
+  <!-- 航向 -->
+  <div class="card c-3">
+    <h3>航向</h3>
+    <div class="big"><span id="vHdg">--</span><span class="unit">°</span></div>
+    <div class="pair"><span id="hdgDir">--</span><span>距 HOME <b id="vHomeDist">--</b></span></div>
+    <div class="pair"><span>剩余航点</span><b id="vWpDist">--</b></div>
+  </div>
+
+  <!-- GPS -->
+  <div class="card c-3">
+    <h3>GPS</h3>
+    <div class="pair"><span>星数</span><b id="vSats">--</b></div>
+    <div class="gpsline" id="vLat">纬度 --</div>
+    <div class="gpsline" id="vLon">经度 --</div>
+    <div class="gpsline" id="vHome" style="color:#fbbf24">home --</div>
+    <div class="pair" style="margin-top:8px;"><span>速度</span><b id="vSpd">--</b></div>
+  </div>
+
+  <!-- 地图 -->
+  <div class="card c-9">
+    <div class="maph">
+      <h3 style="margin:0;">地图 · 飞机实时位置 / 轨迹 / HOME / 航点</h3>
+      <div class="st"><span id="mapFollow">跟随中</span> · <span id="trkCnt">轨迹 0 点</span>
+        <button class="btn sm" onclick="toggleFollow()" style="margin-left:6px;">跟随/自由</button>
+        <button class="btn sm off" onclick="clearTrack()">清空轨迹</button>
+        <button class="btn sm" id="btnSrc" onclick="switchTileSource(srcIdx+1,false)" title="瓦片加载不出来时点这个换源">地图源: <span id="mapSrc">OSM</span></button>
+      </div>
+    </div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div class="legend">
+        <div><span class="lg lg-drone"></span>飞机位置</div>
+        <div><span class="lg lg-home"></span>HOME 起飞点</div>
+        <div><span class="lg lg-wp"></span>航点</div>
+        <div><span class="lg lg-trk"></span>飞行轨迹</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RC -->
+  <div class="card c-3">
+    <h3>遥控通道 CH1~CH7</h3>
+    <div id="rcRows"></div>
+  </div>
+
+  <!-- 航点 -->
+  <div class="card c-12">
+    <h3>航点航线（数传下发 · 与 WiFi 版同语义）</h3>
+    <div class="wpinputs">
+      <input id="wpLat" placeholder="目标纬度 如 25.2634">
+      <input id="wpLon" placeholder="目标经度 如 110.2900">
+      <input id="wpAlt" placeholder="高度(m) 1~120" value="30">
+      <button class="btn" onclick="wpCmd('add')">添加</button>
+    </div>
+    <div class="wpbtns">
+      <button class="btn green" onclick="wpCmd('clear')">清除</button>
+      <button class="btn green" onclick="wpCmd('start')">开始航线</button>
+      <button class="btn danger" onclick="wpCmd('stop')">取消</button>
+      <button class="btn off" onclick="logReq()">请求日志</button>
+    </div>
+    <div class="wpstat" id="wpStat">未连接 / 未激活（需已解锁 + GPS 定位）</div>
+    <div class="wplist" id="wpListRows">航点列表：空</div>
+  </div>
+
+  <!-- 电机 -->
+  <div class="card c-12">
+    <h3>电机油门 M1~M4</h3>
+    <div id="motRows"></div>
+  </div>
+</div>
+
+<div class="logbar">
+  <button id="btnLog" class="btn off" onclick="toggleLog()">显示原始数据</button>
+  <button id="btnPause" class="btn off" onclick="togglePause()">暂停</button>
+  <button class="btn off" onclick="downloadLog()">下载记录</button>
+</div>
+<div id="log"></div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ================= 串口 ================= */
+var port=null, reader=null, writer=null, connected=false;
+var buf='';            // 行缓冲
+var lastT=0, dataAge=0;
+var lastJsonStr='';    // 最新一行遥测 JSON（共享用）
+var RC_LBL=['ROLL','PITCH','THR','YAW','ARM','RTL','POS'];
+var DIRS=['N','NE','E','SE','S','SW','W','NW'];
+
+/* ================= DOM ================= */
+var $=function(id){return document.getElementById(id);};
+var connState=$('connState'), btnConn=$('btnConn'), baudSel=$('baud');
+var linkDot=$('linkDot'), linkTxt=$('linkTxt');
+var armDot=$('armDot'), armTxt=$('armTxt'), modeB=$('modeBadge');
+
+if(!navigator.serial){ $('tipNoSerial').style.display='block'; btnConn.disabled=true; }
+
+/* ================= 地图（多瓦片源 + 自动降级） ================= */
+var map=null, droneMk=null, homeMk=null, trkLine=null, wpMks=[];
+var track=[], follow=true, mapReady=false;
+var TILE_SOURCES=[
+  {name:'高德', url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
+  {name:'卫星图', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'},
+  {name:'OSM', url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', opts:{maxZoom:19}, attr:'© OpenStreetMap'}
+];
+var srcIdx=0, tileErr=0, tileLayer=null, switchCount=0, loadWatch=null;
+function switchTileSource(idx, silent){
+  srcIdx=idx%TILE_SOURCES.length;
+  var s=TILE_SOURCES[srcIdx];
+  if(tileLayer) map.removeLayer(tileLayer);
+  tileErr=0;
+  switchCount++;
+  tileLayer=L.tileLayer(s.url,s.opts).addTo(map);
+  tileLayer.on('tileerror',function(){
+    tileErr++;
+    if(tileErr>=4 && TILE_SOURCES.length>1){ switchTileSource(srcIdx+1,true); }
+  });
+  $('mapSrc').textContent=s.name;
+  if(!silent && switchCount>1) $('trkCnt').textContent='已切换地图源: '+s.name;
+  startLoadWatch();
+}
+/* 兜底：几秒内一张瓦片都没成功（网络假死/错误占位图）→ 自动换源 */
+function startLoadWatch(){
+  if(loadWatch) clearInterval(loadWatch);
+  var fails=0;
+  loadWatch=setInterval(function(){
+    var tps=document.querySelectorAll('#map .leaflet-tile-loaded').length;
+    if(tps>0){ clearInterval(loadWatch); return; }
+    fails++;
+    if(fails>=3){
+      if(switchCount<8){
+        switchTileSource(srcIdx+1,true);
+      }else{
+        clearInterval(loadWatch);
+        $('map').innerHTML='<div style="padding:20px;color:#f87171;font-size:13px;">地图源全部不可达（需联网）。数字遥测显示不受影响。</div>';
+      }
+    }
+  },2000);
+}
+function initMap(){
+  if(!window.L) return;
+  map=L.map('map').setView([25.26,110.28], 15);
+  switchTileSource(0,false);
+  /* 初始视野：优先浏览器定位（没连数据时的地图中心 = 你所在位置）；拒绝则保留默认 */
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(pos){
+      map.setView([pos.coords.latitude,pos.coords.longitude],15);
+    },function(){},{timeout:4000});
+  }
+  droneMk=L.marker([25.26,110.28],{icon:L.divIcon({className:'mk-drone',html:'<svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})}).addTo(map);
+  homeMk=L.circleMarker([25.26,110.28],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
+  trkLine=L.polyline([],{color:'#38bdf8',weight:2,dashArray:'6 4'}).addTo(map);
+  mapReady=true;
+}
+
+function updateMap(lat,lon,hdg,home){
+  if(!mapReady) return;
+  if(isFinite(lat)&&isFinite(lon)){
+    droneMk.setLatLng([lat,lon]);
+    track.push([lat,lon]);
+    if(track.length>2000) track.shift();
+    trkLine.setLatLngs(track);
+    $('trkCnt').textContent='轨迹 '+track.length+' 点';
+    if(follow) map.panTo([lat,lon]);
+  }
+  if(home&&isFinite(home[0])&&isFinite(home[1])) homeMk.setLatLng([home[0],home[1]]);
+}
+
+function drawWps(list){
+  if(!mapReady) return;
+  for(var i=0;i<wpMks.length;i++) map.removeLayer(wpMks[i]);
+  wpMks=[];
+  for(var i=0;i<list.length;i++){
+    var p=list[i];
+    if(!p||!isFinite(p[0])||p[0]===0) continue;
+    var mk=L.circleMarker([p[0],p[1]],{radius:7,color:'#38bdf8',fillColor:'#38bdf8',fillOpacity:.7})
+      .bindTooltip('航点'+(i+1)+' · '+p[2].toFixed(0)+'m');
+    wpMks.push(mk); mk.addTo(map);
+  }
+}
+window.toggleFollow=function(){follow=!follow; $('mapFollow').textContent=follow?'跟随中':'自由';};
+window.clearTrack=function(){track=[]; trkLine.setLatLngs([]); $('trkCnt').textContent='轨迹 0 点';};
+
+/* ================= 渲染 ================= */
+var aiRoll=$('aiRoll'), aiPitch=$('aiPitch');
+function barHtml(v){
+  var p=Math.max(0,Math.min(100,(v-1000)/10));
+  return '<div class="bar"><i style="width:'+p+'%"></i><span class="mid"></span></div>';
+}
+function haversine(lat1,lon1,lat2,lon2){
+  var R=6371000,toRad=Math.PI/180;
+  var dLat=(lat2-lat1)*toRad,dLon=(lon2-lon1)*toRad;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function render(d){
+  // 解锁/模式
+  armDot.className='dot '+(d.armed?'on':'offline');
+  armTxt.textContent=d.armed?'解锁':'上锁';
+  modeB.textContent=d.mode;
+  modeB.className='badge'+(d.mode.indexOf('RTL')===0?' rtl':(d.mode==='POSHOLD'?' pos':(d.armed?'armed':'')));
+  // 姿态
+  var r=isFinite(d.roll)?d.roll:0, p=isFinite(d.pitch)?d.pitch:0;
+  var pr=Math.max(-60,Math.min(60,-p*1.8));
+  aiRoll.setAttribute('transform','translate(110,90) rotate('+r+')');
+  aiPitch.setAttribute('transform','translate(0,'+pr+')');
+  $('vRoll').textContent=r.toFixed(1); $('vPitch').textContent=p.toFixed(1);
+  $('vYaw').textContent=isFinite(d.yaw)?d.yaw.toFixed(1):'--';
+  // 高度
+  var alt=isFinite(d.alt)?d.alt:0;
+  $('vAlt').textContent=alt.toFixed(1);
+  $('altFill').style.height=Math.max(0,Math.min(100,alt/1.2))+'%';
+  $('vVspd').textContent=(isFinite(d.vspd)?d.vspd:0).toFixed(1)+' m/s';
+  // 航向
+  var h=isFinite(d.hdg)?d.hdg:-1;
+  if(h<0){$('vHdg').textContent='--'; $('hdgDir').textContent='罗盘离线';}
+  else{$('vHdg').textContent=h.toFixed(0); $('hdgDir').textContent=DIRS[Math.floor(((h+22.5)%360)/45)];}
+  // GPS
+  $('vSats').textContent=d.sats;
+  $('vLat').textContent='纬度 '+(isFinite(d.lat)?d.lat.toFixed(5):'--');
+  $('vLon').textContent='经度 '+(isFinite(d.lon)?d.lon.toFixed(5):'--');
+  $('vHome').textContent='home '+(d.home&&isFinite(d.homeLat)?d.homeLat.toFixed(5)+', '+d.homeLon.toFixed(5):'未记录');
+  var spd=isFinite(d.spd)?d.spd:0;
+  $('vSpd').textContent=spd.toFixed(1)+' m/s';
+  // home 距离
+  if(d.home&&isFinite(d.homeLat)&&isFinite(d.lat)){
+    $('vHomeDist').textContent=(haversine(d.lat,d.lon,d.homeLat,d.homeLon)).toFixed(0)+' m';
+  }else{$('vHomeDist').textContent='--';}
+  $('vWpDist').textContent=(isFinite(d.wp)&&d.wp>=0)?d.wp.toFixed(1)+' m':'--';
+  // 地图
+  updateMap(d.lat,d.lon,d.hdg,d.home?[d.homeLat,d.homeLon]:null);
+  // 航点状态
+  var wpEl=$('wpStat');
+  if(d.wpTotal>0&&isFinite(d.wp)&&d.wp>=0){
+    wpEl.textContent='航线执行中 · 目标 '+(d.wpIndex+1)+'/'+d.wpTotal+' · 剩余 '+d.wp.toFixed(1)+'m';
+    wpEl.className='wpstat go';
+  }else if(d.wpTotal>0){
+    wpEl.textContent='已设置 '+d.wpTotal+' 个航点 · 未开始（解锁+定位后点开始航线）';
+    wpEl.className='wpstat wait';
+  }else{
+    wpEl.textContent='未激活（需已解锁 + GPS 定位）';
+    wpEl.className='wpstat idle';
+  }
+  var wl='航点列表：';
+  var wps=[];
+  for(var i=0;i<d.wpTotal;i++){
+    var pp=d.wpList&&d.wpList[i];
+    if(pp&&pp[0]!=0){wps.push(pp); wl+=(i+1)+'#'+pp[0].toFixed(4)+','+pp[1].toFixed(4)+'@'+pp[2].toFixed(0)+'m  ';}
+  }
+  $('wpListRows').textContent=d.wpTotal?wl:'航点列表：空';
+  drawWps(wps);
+  // RC
+  var rcRows=$('rcRows'); rcRows.innerHTML='';
+  for(var i=0;i<7;i++){
+    var row=document.createElement('div'); row.className='row';
+    row.innerHTML='<span class="lbl">'+RC_LBL[i]+'</span>'+barHtml(d.rc[i])+'<span class="val">'+d.rc[i]+'</span>';
+    rcRows.appendChild(row);
+  }
+  // 电机
+  var motRows=$('motRows'); motRows.innerHTML='';
+  for(var j=0;j<4;j++){
+    var m=document.createElement('div'); m.className='row';
+    var mp=Math.max(0,Math.min(100,(d.mot[j]-1000)/10));
+    m.innerHTML='<span class="lbl">M'+(j+1)+'</span><div class="bar"><i style="width:'+mp+'%"></i><span class="mid"></span></div><span class="val">'+d.mot[j]+'</span>';
+    motRows.appendChild(m);
+  }
+}
+
+/* ================= 数据流 ================= */
+function handleLine(ln){
+  ln=ln.trim();
+  if(!ln) return;
+  appendLog(ln,'jline');
+  var d=null;
+  try{ d=JSON.parse(ln); }catch(e){ appendLog('⚠ 非JSON行：'+ln.slice(0,120),'rowline'); return; }
+  if(d&&d.t){
+    lastT=d.t; dataAge=0;
+    lastJsonStr=ln;
+    linkDot.className='dot on'; linkTxt.textContent='数据正常';
+    render(d);
+  }
+}
+function appendLog(body,cls){
+  var d=document.createElement('div'); d.className=cls||'rowline';
+  d.textContent=body;
+  $('log').appendChild(d);
+  while($('log').childNodes.length>400) $('log').removeChild($('log').firstChild);
+  if(!paused&&logOn) $('log').scrollTop=$('log').scrollHeight;
+}
+
+async function readLoop(){
+  while(port&&reader){
+    try{
+      var {value,done}=await reader.read();
+      if(done) break;
+      if(value){
+        buf+=new TextDecoder().decode(value);
+        var idx;
+        while((idx=buf.indexOf('\n'))>=0){
+          handleLine(buf.slice(0,idx));
+          buf=buf.slice(idx+1);
+        }
+        if(buf.length>8192) buf='';   // 防御：无换行的垃圾流
+      }
+    }catch(e){ appendLog('读取中断：'+e.message,'eline'); break; }
+  }
+}
+
+/* ================= 连接 ================= */
+window.connToggle=async function(){
+  if(connected){ await disconnect(); return; }
+  if(!navigator.serial){ alert('当前浏览器不支持串口，请用 Chrome/Edge 打开'); return; }
+  try{
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:parseInt(baudSel.value,10)});
+    connected=true;
+    connState.textContent='已连接 '+(port.getInfo?('('+port.getInfo().usbVendorId+')'):'');
+    btnConn.textContent='断开';
+    btnConn.className='btn danger';
+    linkDot.className='dot link'; linkTxt.textContent='等待数据…';
+    reader=port.readable.getReader();
+    readLoop();
+    if(port.writable){ writer=port.writable.getWriter(); }
+  }catch(e){
+    if(e.name==='NotFoundError') return;   // 用户取消选择
+    connState.textContent='连接失败：'+e.message;
+    port=null;
+  }
+};
+async function disconnect(){
+  if(reader){ try{ await reader.cancel(); }catch(e){} reader=null; }
+  if(writer){ try{ writer.releaseLock(); }catch(e){} writer=null; }
+  if(port){ try{ await port.close(); }catch(e){} port=null; }
+  connected=false;
+  connState.textContent='未连接';
+  btnConn.textContent='连接串口';
+  btnConn.className='btn';
+  linkDot.className='dot offline'; linkTxt.textContent='等待数据';
+}
+
+/* ================= 共享到手机 ================= */
+var shareOn=false, shareTimer=null;
+function pushShare(){
+  if(!shareOn||!lastJsonStr) return;
+  fetch('http://localhost:8787/data',{method:'POST',body:lastJsonStr})
+    .catch(function(){});   // 服务器没启动时静默，界面有提示
+}
+window.toggleShare=function(){
+  shareOn=!shareOn;
+  var b=$('btnShare');
+  b.className=shareOn?'btn green':'btn off';
+  b.textContent=shareOn?'共享中...':'共享到手机';
+  if(shareOn){
+    fetch('http://localhost:8787/ip').then(function(r){return r.text();}).then(function(ip){
+      $('shareTxt').textContent='手机连同一WiFi，打开 http://'+ip+':8787';
+    }).catch(function(){
+      $('shareTxt').textContent='没找到服务器：请先双击「启动共享服务器.bat」再开共享';
+    });
+    shareTimer=setInterval(pushShare,1000);
+  }else{
+    if(shareTimer){ clearInterval(shareTimer); shareTimer=null; }
+    $('shareTxt').textContent='';
+  }
+};
+
+/* ================= 命令下发 ================= */
+function sendLine(cmd){
+  if(!connected||!port||!port.writable){ alert('请先连接串口'); return; }
+  var enc=new TextEncoder();
+  (async function(){
+    try{
+      var w=port.writable.getWriter();
+      await w.write(enc.encode(cmd+'\n'));
+      w.releaseLock();
+      appendLog('TX> '+cmd,'rowline');
+    }catch(e){ appendLog('发送失败：'+e.message,'eline'); }
+  })();
+}
+window.wpCmd=function(kind){
+  if(!connected){ alert('请先连接串口'); return; }
+  if(kind==='add'){
+    var lat=parseFloat($('wpLat').value), lon=parseFloat($('wpLon').value), alt=parseFloat($('wpAlt').value);
+    if(isNaN(lat)||isNaN(lon)||isNaN(alt)){ alert('请填写目标纬度/经度/高度'); return; }
+    sendLine('WP:ADD,'+lat+','+lon+','+alt);
+  }else if(kind==='clear'){ sendLine('WP:CLEAR'); }
+  else if(kind==='start'){ sendLine('WP:START'); }
+  else if(kind==='stop'){ sendLine('WP:STOP'); }
+};
+window.logReq=function(){ if(!connected){ alert('请先连接串口'); return; } sendLine('D'); };
+
+/* ================= 日志 ================= */
+var logOn=false, paused=false, all=[];
+window.toggleLog=function(){
+  logOn=!logOn;
+  $('log').style.display=logOn?'block':'none';
+  $('btnLog').textContent=logOn?'隐藏原始数据':'显示原始数据';
+  $('btnLog').className=logOn?'btn':'btn off';
+};
+window.togglePause=function(){ paused=!paused; $('btnPause').textContent=paused?'继续':'暂停'; };
+window.downloadLog=function(){
+  var txt='';
+  var nodes=$('log').childNodes;
+  for(var i=0;i<nodes.length;i++){ if(nodes[i].textContent) txt+=nodes[i].textContent+'\n'; }
+  if(!txt.trim()){ alert('暂无数据'); return; }
+  var blob=new Blob([txt],{type:'text/plain'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='s4fly_gs_'+Date.now()+'.txt'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+};
+
+/* 串口数据新鲜度监控（掉线提醒） */
+setInterval(function(){
+  if(connected){
+    dataAge++;
+    if(dataAge>20){ linkDot.className='dot link'; linkTxt.textContent='数据超时('+dataAge+'s)'; }
+    if(dataAge>60){ linkDot.className='dot offline'; linkTxt.textContent='无数据，检查数传'; }
+  }
+},1000);
+
+/* 初始化地图（等 Leaflet 就绪） */
+if(window.L){ initMap(); }
+else{
+  var iv=setInterval(function(){
+    if(window.L){ clearInterval(iv); initMap(); }
+  },200);
+  setTimeout(function(){ clearInterval(iv); if(!mapReady){ $('map').innerHTML='<div style="padding:20px;color:#8aa0b8;font-size:13px;">地图库加载失败（需联网）——遥测数字显示不受影响。</div>'; } },8000);
+}
+
+})();
+</script>
+</body>
+</html>
