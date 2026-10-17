@@ -208,8 +208,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
         <button class="btn sm off" onclick="clearTrack()">清空轨迹</button>
         <span class="srcsel">来源:
           <button class="srcbtn on" id="srcBtn0" onclick="switchTileSource(0,false)">高德</button>
-          <button class="srcbtn" id="srcBtn1" onclick="switchTileSource(1,false)">卫星</button>
-          <button class="srcbtn" id="srcBtn2" onclick="switchTileSource(2,false)">Esri卫星</button>
+          <button class="srcbtn" id="srcBtn1" onclick="switchTileSource(1,false)">Esri卫星</button>
         </span>
       </div>
     </div>
@@ -291,7 +290,6 @@ var map=null, droneMk=null, homeMk=null, trkLine=null, wpMks=[];
 var track=[], follow=true, mapReady=false;
 var TILE_SOURCES=[
   {name:'高德', url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
-  {name:'卫星', url:'https://webst0{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
   {name:'Esri卫星', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null, switchCount=0, loadWatch=null;
