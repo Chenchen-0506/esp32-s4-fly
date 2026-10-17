@@ -121,6 +121,13 @@ static float mag_heading = 0.0f;        // 罗盘航向（度 0~360）
 static bool  rtl_active = false;        // 是否处于返航模式
 static bool  rtl_src_failsafe = false;  // 返航触发源：true=失控自动（不可中途退出），false=CH6 手动
 bool wp_pending = false;             // 航点请求（WiFi 网页置位，主程序校验后执行）
+
+// ---- 无 GPS 失控缓降（安全策略：怠速慢降，触地/超时自动上锁）----
+#define GLIDE_THROTTLE_US   1150     // 缓降油门（低于悬停基准，缓慢下降）
+#define GLIDE_LAND_ALT_M    0.6f     // 视为触地的高度阈值（相对起飞点）
+#define GLIDE_TIMEOUT_MS    15000UL  // 缓降最长 15s，超时强制上锁（兜底）
+static bool     glide_landing = false; // 失控缓降进行中
+static uint32_t glide_start_ms = 0;
 static WP_Output wp_out;             // 航点输出指令
 static RTL_Output rtl_out;              // 返航输出指令
 
@@ -327,16 +334,14 @@ void loop() {
         rtl_out = rtl_update(true, true, gps_lat, gps_lon, mag_heading, vertest_alt());
         Serial.println("[!] 遥控丢失 → 自动返航");
       } else {
-        // 无定位无法返航：安全兜底直接上锁
-        armed = false;
-        arm_switching = false;
-        rtl_active = false;
-        rtl_reset();
-        wp_pending = false;
-        wp_stop();
-        set_all_motors(MIN_US);
-        Serial.println("[!] 遥控丢失且无 GPS 定位 → 强制上锁（安全策略）");
-        logger_flush();   // 黑匣子落盘
+        // 无定位无法返航：怠速缓降（不直接停桨，避免自由落体）
+        if (!glide_landing) {
+          glide_landing = true;
+          glide_start_ms = millis();
+          wp_pending = false;
+          wp_stop();
+          Serial.println("[!] 遥控丢失且无 GPS 定位 → 怠速缓降（触地自动上锁）");
+        }
       }
     }
   } else if (armed && ch6_rtl) {
@@ -355,6 +360,11 @@ void loop() {
       }
     }
   } else {
+    // —— 遥控恢复：退出失控缓降，恢复正常手动控制 ——
+    if (glide_landing && !rtl_active) {
+      glide_landing = false;
+      Serial.println("[!] 遥控恢复，退出缓降（继续手动控制）");
+    }
     // —— 遥控正常且 CH6 松开：仅手动返航可退出；降落阶段禁止退出（避免悬空）——
     if (rtl_active && !rtl_src_failsafe &&
         rtl_out.mode != RTL_DESCEND && rtl_out.mode != RTL_LANDED) {
@@ -506,6 +516,11 @@ void loop() {
     thr_out = wp_out.throttle_us;
   }
 
+  // ---- 5.555 失控缓降：油门固定怠速，自然下滑（姿态已归水平）----
+  if (glide_landing && armed) {
+    thr_out = GLIDE_THROTTLE_US;
+  }
+
   // ---- 5.6 定高/悬停模式（CH7 高进入；返航/上锁/失控优先退出）----
   float ph_pitch_cmd = 0, ph_roll_cmd = 0, ph_yaw_cmd = 0;
   bool ch7_pos = !wp_pending && (rc_ch[CH_POS] > 1500);   // 航点模式下 CH7 定高不接管（防止油门被二次覆盖）
@@ -530,10 +545,15 @@ void loop() {
 
   // ---- 6. 串级 PID 计算 ----
   // 返航激活时（含失控触发）也必须执行控制环，用 RTL 指令输出
-  if (armed && (rtl_active || !rc_lost)) {
+  if (armed && (rtl_active || !rc_lost || glide_landing)) {
     float roll_angle_err, pitch_angle_err, yaw_target_rate;
 
-    if (rtl_active) {
+    if (glide_landing) {
+      // 失控缓降：姿态目标水平（保持机体水平缓慢下降，不跟冻结摇杆）
+      roll_angle_err   = -roll_deg;
+      pitch_angle_err  = -pitch_deg;
+      yaw_target_rate  = 0;
+    } else if (rtl_active) {
       // 返航：目标是 RTL 给出的姿态角/偏航速率
       roll_angle_err   = rtl_out.target_roll   - roll_deg;
       pitch_angle_err  = rtl_out.target_pitch  - pitch_deg;
@@ -594,11 +614,32 @@ void loop() {
     pid_yaw_rate.i_term = 0;
   }
 
+  // ---- 7.5 缓降落地检测（100Hz 节拍；气压可用时按高度判触地，否则等超时兜底）----
+  if (glide_landing) {
+    static uint32_t tGlide = 0;
+    if (now - tGlide >= 10000UL) {
+      tGlide = now;
+      bool landed = (bmp_ok && vertest_alt() <= GLIDE_LAND_ALT_M) ||
+                    (millis() - glide_start_ms > GLIDE_TIMEOUT_MS);
+      if (landed) {
+        armed = false;
+        glide_landing = false;
+        rtl_active = false;
+        rtl_reset();
+        wp_pending = false;
+        wp_stop();
+        set_all_motors(MIN_US);
+        Serial.println(">>> 缓降完成，已上锁 <<<");
+        logger_flush();   // 黑匣子落盘
+      }
+    }
+  }
+
   // ---- 8. 10Hz 状态打印 ----
   static uint32_t tPrint = 0;
   if (now - tPrint >= 100000UL) {
     tPrint = now;
-    const char *rtl_name = mag_cal_mode ? "MAGCAL" : (rtl_active ? "RTL " : "MANU");
+    const char *rtl_name = mag_cal_mode ? "MAGCAL" : (glide_landing ? "GLIDE " : (rtl_active ? "RTL " : "MANU"));
     if (mag_cal_mode) {
       rtl_name = "MAGCAL";
     } else if (rtl_active) {
