@@ -50,7 +50,7 @@ M6_full_flight/
     ├── LINK.h/.cpp         # 433MHz 数传链路（UART1：10Hz 遥测上行 + WP/D 命令下行）
 ```
 
-## 功能总览（v0.17）
+## 功能总览（v0.19）
 
 | 类别 | 功能 | 版本 |
 |---|---|---|
@@ -76,6 +76,7 @@ M6_full_flight/
 | 安全 | 摇杆偏离中位立即接管（自动飞行可随时打断） | v0.15 |
 | 数据 | 黑匣子 LOGGER（512 行环形缓冲，60s 落盘，串口 D 导出） | v0.11 |
 | 数据 | WiFi 实时仪表盘（热点 S4Fly-Telemetry，姿态球/高度/航向/GPS/通道/电机） | v0.13 |
+| 数据 | 数传网页记录 + CSV 导出（电脑/手机地面站，遥测含 vspd/spd 速度） | v0.19 |
 | 工具 | 电调校准 M4_esc_test（四路同时校准/测试） | v0.13 |
 | 工程 | 模块化 src/（15 模块）+ GitHub 开源（17 个版本标签回档） | v0.1~v0.17 |
 
@@ -145,13 +146,14 @@ M6_full_flight/
 
 - **接线**（机载）：主控 `GPIO14(TX)` → 机载数传模块 RX；主控 `GPIO15(RX)` ← 机载数传模块 TX；数传 5V/GND 供电（与分电板 UBEC 同源）
 - **波特率**：`57600` 8N1（UART1，引脚宏在 `src/LINK.h`，与地面端默认一致）
-- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/wp/wpIndex/wpTotal/wpList[8]/mot[4]`）
+- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/vspd/spd/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/wp/wpIndex/wpTotal/wpList[8]/mot[4]`，vspd=垂直速度 m/s、spd=水平地速 m/s GPS 差分）
 - **下行命令**：地面站发一行即可
   - `WP:ADD,lat,lon,alt` 添加航点（alt 省略默认 30m）
   - `WP:CLEAR` 清空航线 / `WP:START` 开始 / `WP:STOP` 停止
   - `D` 回传最近 10 行黑匣子日志
 - **USB 同步输出**：同一份 JSON 也打到 `Serial`（115200），Type-C 连电脑后地面站用 **Web Serial** 直读，无需数传即可联调
 - **路线**：数传联调通过后，WiFi 仪表盘（TELEMETRY Web 服务）将删除，**只留数传**（用户已确认）
+- **网页记录与导出（分析通道，v0.19）**：地面站收到遥测自动记录（电脑端 Web Serial / 手机端共享均支持），飞行后点 **“导出数据(CSV)”** 生成 `S4Fly_flight_时间戳.csv`（含 vspd/spd，Excel 或脚本可直接分析）；**不再依赖机载完整日志下载**——黑匣子仅作机载兜底
 
 ### 参数调节
 

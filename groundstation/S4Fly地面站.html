@@ -258,7 +258,8 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 <div class="logbar">
   <button id="btnLog" class="btn off" onclick="toggleLog()">显示原始数据</button>
   <button id="btnPause" class="btn off" onclick="togglePause()">暂停</button>
-  <button class="btn off" onclick="downloadLog()">下载记录</button>
+  <button class="btn green" onclick="exportData()">导出数据(CSV)</button>
+  <button class="btn off" onclick="clearData()">清空记录</button>
 </div>
 <div id="log"></div>
 
@@ -274,6 +275,8 @@ var port=null, reader=null, writer=null, connected=false;
 var buf='';            // 行缓冲
 var lastT=0, dataAge=0;
 var lastJsonStr='';    // 最新一行遥测 JSON（共享用）
+var dataLog=[];         // 遥测记录（原始 JSON 行，飞行数据用于分析）
+var DATA_LOG_MAX=20000; // 内存上限（10Hz ≈ 33 分钟）
 var RC_LBL=['ROLL','PITCH','THR','YAW','ARM','RTL','POS'];
 var DIRS=['N','NE','E','SE','S','SW','W','NW'];
 
@@ -475,6 +478,7 @@ function handleLine(ln){
   if(d&&d.t){
     lastT=d.t; dataAge=0;
     lastJsonStr=ln;
+    if(dataLog.length<DATA_LOG_MAX){ dataLog.push(ln); }
     linkDot.className='dot on'; linkTxt.textContent='数据正常';
     render(d);
   }
@@ -602,16 +606,38 @@ window.toggleLog=function(){
   $('btnLog').className=logOn?'btn':'btn off';
 };
 window.togglePause=function(){ paused=!paused; $('btnPause').textContent=paused?'继续':'暂停'; };
-window.downloadLog=function(){
-  var txt='';
-  var nodes=$('log').childNodes;
-  for(var i=0;i<nodes.length;i++){ if(nodes[i].textContent) txt+=nodes[i].textContent+'\n'; }
-  if(!txt.trim()){ alert('暂无数据'); return; }
-  var blob=new Blob([txt],{type:'text/plain'});
+/* 导出飞行数据为 CSV（数传网页记录，飞行后打包分析） */
+window.exportData=function(){
+  if(!dataLog.length){ alert('暂无记录数据：连接并飞行后遥测自动记录，上限 20000 条'); return; }
+  var HDR=['t','armed','mode','roll','pitch','yaw','alt','vspd','spd','fix','sats','lat','lon','home','homeLat','homeLon','hdg','wp','wpIndex','wpTotal','m1','m2','m3','m4'];
+  var lines=[HDR.join(',')];
+  for(var i=0;i<dataLog.length;i++){
+    var d=null; try{ d=JSON.parse(dataLog[i]); }catch(e){ continue; }
+    if(!d||!d.t) continue;
+    var r=HDR.map(function(k){
+      if(k==='mode'){ return '"'+(d[k]||'')+'"'; }
+      if(k.charAt(0)==='m'&&k.length===2){
+        var mi=parseInt(k.slice(1),10)-1;
+        return (d.mot&&d.mot[mi]!==undefined)?d.mot[mi]:'';
+      }
+      if(d[k]===undefined||d[k]===null) return '';
+      return d[k];
+    });
+    lines.push(r.join(','));
+  }
+  var blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
   var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='s4fly_gs_'+Date.now()+'.txt'; a.click();
+  var ts=new Date();
+  function p2(n){ return (n<10?'0':'')+n; }
+  a.download='S4Fly_flight_'+ts.getFullYear()+p2(ts.getMonth()+1)+p2(ts.getDate())+'_'+p2(ts.getHours())+p2(ts.getMinutes())+p2(ts.getSeconds())+'.csv';
+  a.click();
   setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
 };
+window.clearData=function(){
+  dataLog=[];
+  appendLog('已清空记录（'+new Date().toLocaleTimeString()+'）','rowline');
+};
+
 
 /* 串口数据新鲜度监控（掉线提醒） */
 setInterval(function(){

@@ -118,6 +118,8 @@ h1{font-size:16px;margin:0;} h1 b{color:#38bdf8;}
     <div class="st" style="margin-bottom:6px;justify-content:space-between;">
       <span id="trkCnt">轨迹 0 点</span>
       <button id="tileBtn" onclick="switchTile()">来源:高德</button>
+      <button class="btn" onclick="exportData()">导出数据(CSV)</button>
+      <button class="btn" onclick="clearData()">清空记录</button>
     </div>
     <div id="mapWrap">
       <div id="map"></div>
@@ -143,6 +145,8 @@ var $=function(id){return document.getElementById(id);};
 var sDot=$('sDot'),sTxt=$('sTxt');
 /* file:// 本地预览走 localhost；手机通过 http://IP:8787 访问时用相对路径 */
 var API_BASE=(location.protocol==='file:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:8787':'';
+var dataLog=[];         // 遥测记录（飞行数据，导出 CSV 分析）
+var DATA_LOG_MAX=20000;
 var RC_LBL=['ROLL','PITCH','THR','YAW','ARM','RTL','POS'];
 var DIRS=['N','NE','E','SE','S','SW','W','NW'];
 var aiRoll=$('aiRoll'),aiPitch=$('aiPitch');
@@ -242,7 +246,7 @@ async function tick(){
     var r=await fetch(API_BASE+'/api',{cache:'no-store'});
     if(!r.ok) throw 0;
     var d=await r.json();
-    if(d&&d.t){ lastAge=0; render(d); }
+    if(d&&d.t){ lastAge=0; if(dataLog.length<DATA_LOG_MAX){ dataLog.push(d); } render(d); }
   }catch(e){ lastAge++; }
   if(lastAge>5){
     sDot.className='dot warn'; sTxt.textContent=lastAge>30?'无数据(检查服务器/数传)':'等待数据…';
@@ -250,6 +254,35 @@ async function tick(){
     sDot.className='dot on'; sTxt.textContent='数据正常';
   }
 }
+window.exportData=function(){
+  if(!dataLog.length){ alert('暂无记录数据：飞行中自动记录，上限 20000 条'); return; }
+  var HDR=['t','armed','mode','roll','pitch','yaw','alt','vspd','spd','fix','sats','lat','lon','home','homeLat','homeLon','hdg','wp','wpIndex','wpTotal','m1','m2','m3','m4'];
+  var lines=[HDR.join(',')];
+  for(var i=0;i<dataLog.length;i++){
+    var d=dataLog[i];
+    var r=HDR.map(function(k){
+      if(k==='mode'){ return '"'+(d[k]||'')+'"'; }
+      if(k.charAt(0)==='m'&&k.length===2){
+        var mi=parseInt(k.slice(1),10)-1;
+        return (d.mot&&d.mot[mi]!==undefined)?d.mot[mi]:'';
+      }
+      if(d[k]===undefined||d[k]===null) return '';
+      return d[k];
+    });
+    lines.push(r.join(','));
+  }
+  var blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  var ts=new Date();
+  function p2(n){ return (n<10?'0':'')+n; }
+  a.download='S4Fly_mobile_'+ts.getFullYear()+p2(ts.getMonth()+1)+p2(ts.getDate())+'_'+p2(ts.getHours())+p2(ts.getMinutes())+p2(ts.getSeconds())+'.csv';
+  a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+};
+window.clearData=function(){
+  dataLog=[];
+  if(typeof appendLog==='function'){ appendLog('已清空记录'); }
+};
 setInterval(tick,1000);
 tick();
 })();

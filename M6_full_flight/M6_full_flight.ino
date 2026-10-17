@@ -683,6 +683,22 @@ void loop() {
     tel_status.pitch = pitch_deg;
     tel_status.yaw   = yaw_deg;
     tel_status.alt   = bmp_ok ? vertest_alt() : 0.0f;
+    tel_status.vspd  = bmp_ok ? vertest_vel() : 0.0f;
+
+    // 水平地速：GPS 位置差分（10Hz，无定位时为 0）
+    {
+      static float spd_prev_lat = 0, spd_prev_lon = 0;
+      if (gps_fix && spd_prev_lat != 0) {
+        float dLat = (gps_lat - spd_prev_lat) * 111320.0f;
+        float dLon = (gps_lon - spd_prev_lon) * 111320.0f * cosf(gps_lat * DEG2RAD);
+        tel_status.spd = sqrtf(dLat * dLat + dLon * dLon) / 0.1f;
+      } else {
+        tel_status.spd = 0;
+      }
+      spd_prev_lat = gps_lat;
+      spd_prev_lon = gps_lon;
+    }
+
     for (int i = 0; i < 7; i++) tel_status.rc[i] = rc_ch[i];
     tel_status.gps_fix    = gps_fix;
     tel_status.gps_sats   = gps_sats;

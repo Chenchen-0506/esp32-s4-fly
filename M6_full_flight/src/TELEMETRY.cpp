@@ -406,6 +406,8 @@ String tel_build_json() {
   j += ",\"pitch\":"; j += String(tel_status.pitch, 1);
   j += ",\"yaw\":"; j += String(tel_status.yaw, 1);
   j += ",\"alt\":"; j += String(tel_status.alt, 1);
+  j += ",\"vspd\":"; j += String(tel_status.vspd, 2);
+  j += ",\"spd\":"; j += String(tel_status.spd, 2);
   j += ",\"rc\":[";
   for (int i = 0; i < 7; i++) { if (i) j += ','; j += tel_status.rc[i]; }
   j += "],\"fix\":"; j += tel_status.gps_fix;

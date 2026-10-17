@@ -29,6 +29,8 @@ typedef struct {
   float    pitch;        // deg
   float    yaw;          // deg
   float    alt;          // m（相对起飞点）
+  float    vspd;         // 垂直速度 m/s（+上升，垂直融合）
+  float    spd;          // 水平地速 m/s（GPS 位置差分）
   uint16_t rc[7];        // 通道 1~7
   uint8_t  gps_fix;      // 0/1
   uint8_t  gps_sats;
