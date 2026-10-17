@@ -40,6 +40,7 @@ h1{font-size:16px;margin:0;} h1 b{color:#38bdf8;}
 .wpstat{font-size:11px;margin-top:4px;}
 .wpstat.go{color:#7dd3fc;} .wpstat.wait{color:#fbbf24;} .wpstat.idle{color:#94a3b8;}
 .foot{text-align:center;font-size:10px;color:#64748b;margin-top:8px;}
+#tileBtn{font-size:11px;color:#7dd3fc;background:#1e293b;border:1px solid #334155;border-radius:6px;padding:3px 10px;}
 @media(max-width:380px){.grid{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -114,7 +115,10 @@ h1{font-size:16px;margin:0;} h1 b{color:#38bdf8;}
 
   <div class="card wide">
     <h3>地图 · 实时位置 / 轨迹 / HOME</h3>
-    <div class="st" style="margin-bottom:6px;"><span id="trkCnt">轨迹 0 点</span></div>
+    <div class="st" style="margin-bottom:6px;justify-content:space-between;">
+      <span id="trkCnt">轨迹 0 点</span>
+      <button id="tileBtn" onclick="switchTile()">来源:高德</button>
+    </div>
     <div id="mapWrap">
       <div id="map"></div>
       <div class="legend">
@@ -148,19 +152,22 @@ var lastAge=0, connected=false;
 var map=null, droneMk=null, homeMk=null, trkLine=null;
 var track=[], mapReady=false;
 var TILES=[
-  {url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',sub:'1234'},
-  {url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',sub:''}
+  {name:'高德',url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',sub:'1234'},
+  {name:'卫星',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',sub:''},
+  {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:''}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null;
-function switchTile(){
-  srcIdx=(srcIdx+1)%TILES.length;
+function loadTile(i){
+  srcIdx=((i%TILES.length)+TILES.length)%TILES.length;
   var t=TILES[srcIdx], opts={maxZoom:18};
   if(t.sub) opts.subdomains=t.sub;
   if(tileLayer) map.removeLayer(tileLayer);
   tileErr=0;
   tileLayer=L.tileLayer(t.url,opts).addTo(map);
-  tileLayer.on('tileerror',function(){ tileErr++; if(tileErr>=4) switchTile(); });
+  tileLayer.on('tileerror',function(){ tileErr++; if(tileErr>=4) loadTile(srcIdx+1); });
+  $('tileBtn').textContent='来源:'+t.name;
 }
+window.switchTile=function(){ loadTile(srcIdx+1); };
 function initMap(){
   if(!window.L) return;
   map=L.map('map').setView([25.26,110.28],15);

@@ -536,6 +536,7 @@ window.toggleShare=function(){
   b.className=shareOn?'btn green':'btn off';
   b.textContent=shareOn?'共享中...':'共享到手机';
   if(shareOn){
+    localStorage.removeItem('shareOff');
     fetch('http://localhost:8787/ip').then(function(r){return r.text();}).then(function(ip){
       $('shareTxt').textContent='手机连同一WiFi，打开 http://'+ip+':8787';
     }).catch(function(){
@@ -543,10 +544,15 @@ window.toggleShare=function(){
     });
     shareTimer=setInterval(pushShare,1000);
   }else{
+    localStorage.setItem('shareOff','1');
     if(shareTimer){ clearInterval(shareTimer); shareTimer=null; }
     $('shareTxt').textContent='';
   }
 };
+/* 打开页面自动开启共享（用户上次手动关闭过则不自动开） */
+window.addEventListener('load',function(){
+  if(localStorage.getItem('shareOff')!=='1') toggleShare();
+});
 
 /* ================= 命令下发 ================= */
 function sendLine(cmd){

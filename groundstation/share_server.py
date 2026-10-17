@@ -101,6 +101,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def open_dashboard():
+    """启动后自动打开电脑端地面站页面（该页面会自动开启共享）。"""
+    try:
+        import webbrowser
+        import pathlib
+        base = pathlib.Path(__file__).resolve().parent
+        webbrowser.open((base / "S4Fly地面站.html").as_uri())
+    except Exception:
+        pass
+
+
 def main():
     ip = lan_ip()
     print("=" * 48)
@@ -110,6 +121,7 @@ def main():
     print("  电脑地面站点「共享到手机」即可推送数据")
     print("  按 Ctrl+C 停止")
     print("=" * 48)
+    open_dashboard()
     with socketserver.ThreadingTCPServer(("0.0.0.0", PORT), Handler) as srv:
         srv.daemon_threads = True
         srv.serve_forever()
