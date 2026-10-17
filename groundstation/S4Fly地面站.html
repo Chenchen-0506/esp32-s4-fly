@@ -284,7 +284,8 @@ var map=null, droneMk=null, homeMk=null, trkLine=null, wpMks=[];
 var track=[], follow=true, mapReady=false;
 var TILE_SOURCES=[
   {name:'高德', url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
-  {name:'卫星', url:'https://webst0{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'}
+  {name:'卫星', url:'https://webst0{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
+  {name:'Esri卫星', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null, switchCount=0, loadWatch=null;
 function switchTileSource(idx, silent){
