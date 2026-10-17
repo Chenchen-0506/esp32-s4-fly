@@ -203,7 +203,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
       <div class="st"><span id="mapFollow">跟随中</span> · <span id="trkCnt">轨迹 0 点</span>
         <button class="btn sm" onclick="toggleFollow()" style="margin-left:6px;">跟随/自由</button>
         <button class="btn sm off" onclick="clearTrack()">清空轨迹</button>
-        <button class="btn sm" id="btnSrc" onclick="switchTileSource(srcIdx+1,false)" title="瓦片加载不出来时点这个换源">地图源: <span id="mapSrc">OSM</span></button>
+        <button class="btn sm" id="btnSrc" onclick="switchTileSource(srcIdx+1,false)" title="点击切换 高德/卫星 地图源">来源: <span id="mapSrc">高德</span></button>
       </div>
     </div>
     <div id="mapWrap">
@@ -284,8 +284,7 @@ var map=null, droneMk=null, homeMk=null, trkLine=null, wpMks=[];
 var track=[], follow=true, mapReady=false;
 var TILE_SOURCES=[
   {name:'高德', url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', opts:{maxZoom:18,subdomains:'1234'}, attr:'© 高德地图'},
-  {name:'卫星图', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'},
-  {name:'OSM', url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', opts:{maxZoom:19}, attr:'© OpenStreetMap'}
+  {name:'卫星', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null, switchCount=0, loadWatch=null;
 function switchTileSource(idx, silent){
@@ -325,21 +324,24 @@ function initMap(){
   if(!window.L) return;
   map=L.map('map').setView([25.26,110.28], 15);
   switchTileSource(0,false);
-  /* 初始视野：优先浏览器定位（没连数据时的地图中心 = 你所在位置）；拒绝则保留默认 */
+  /* 初始视野：优先浏览器高精度定位（没连数据时的地图中心 = 你所在位置）；拒绝则保留默认 */
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       map.setView([pos.coords.latitude,pos.coords.longitude],15);
-    },function(){},{timeout:4000});
+    },function(){},{timeout:4000,enableHighAccuracy:true});
   }
-  droneMk=L.marker([25.26,110.28],{icon:L.divIcon({className:'mk-drone',html:'<svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})}).addTo(map);
-  homeMk=L.circleMarker([25.26,110.28],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
+  /* 标记创建但暂不显示：等收到真实遥测坐标才上地图，避免默认坐标误导 */
+  droneMk=L.marker([0,0],{icon:L.divIcon({className:'mk-drone',html:'<svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})});
+  homeMk=L.circleMarker([0,0],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
   trkLine=L.polyline([],{color:'#38bdf8',weight:2,dashArray:'6 4'}).addTo(map);
   mapReady=true;
 }
 
+var droneOn=false, homeOn=false;
 function updateMap(lat,lon,hdg,home){
   if(!mapReady) return;
   if(isFinite(lat)&&isFinite(lon)){
+    if(!droneOn){ droneMk.addTo(map); droneOn=true; }
     droneMk.setLatLng([lat,lon]);
     track.push([lat,lon]);
     if(track.length>2000) track.shift();
@@ -347,7 +349,10 @@ function updateMap(lat,lon,hdg,home){
     $('trkCnt').textContent='轨迹 '+track.length+' 点';
     if(follow) map.panTo([lat,lon]);
   }
-  if(home&&isFinite(home[0])&&isFinite(home[1])) homeMk.setLatLng([home[0],home[1]]);
+  if(home&&isFinite(home[0])&&isFinite(home[1])){
+    if(!homeOn){ homeMk.addTo(map); homeOn=true; }
+    homeMk.setLatLng([home[0],home[1]]);
+  }
 }
 
 function drawWps(list){

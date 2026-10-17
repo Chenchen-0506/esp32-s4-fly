@@ -153,8 +153,7 @@ var map=null, droneMk=null, homeMk=null, trkLine=null;
 var track=[], mapReady=false;
 var TILES=[
   {name:'高德',url:'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',sub:'1234'},
-  {name:'卫星',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',sub:''},
-  {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:''}
+  {name:'卫星',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',sub:''}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null;
 function loadTile(i){
@@ -172,28 +171,34 @@ function initMap(){
   if(!window.L) return;
   map=L.map('map').setView([25.26,110.28],15);
   switchTile();
-  /* 初始视野：浏览器定位到用户实际位置（没数据时）；拒绝则保留默认 */
+  /* 初始视野：浏览器高精度定位到用户实际位置（没数据时）；拒绝则保留默认 */
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       map.setView([pos.coords.latitude,pos.coords.longitude],15);
-    },function(){},{timeout:4000});
+    },function(){},{timeout:4000,enableHighAccuracy:true});
   }
-  droneMk=L.marker([25.26,110.28],{icon:L.divIcon({className:'mk-drone',html:'<svg width="24" height="24" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})}).addTo(map);
-  homeMk=L.circleMarker([25.26,110.28],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
+  /* 标记创建但暂不显示：等收到真实遥测坐标才上地图，避免默认坐标误导 */
+  droneMk=L.marker([0,0],{icon:L.divIcon({className:'mk-drone',html:'<svg width="24" height="24" viewBox="0 0 26 26"><path d="M13 2 L16 10 L24 13 L16 16 L13 24 L10 16 L2 13 L10 10 Z" fill="#22c55e" stroke="#052e16" stroke-width="1"/></svg>'})});
+  homeMk=L.circleMarker([0,0],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME');
   trkLine=L.polyline([],{color:'#38bdf8',weight:2,dashArray:'6 4'}).addTo(map);
   mapReady=true;
 }
 if(window.L) initMap();
 else{ var iv=setInterval(function(){ if(window.L){clearInterval(iv);initMap();} },200); setTimeout(function(){clearInterval(iv);},8000); }
 
+var droneOn=false, homeOn=false;
 function updateMap(lat,lon,home){
   if(!mapReady||!isFinite(lat)) return;
+  if(!droneOn){ droneMk.addTo(map); droneOn=true; }
   droneMk.setLatLng([lat,lon]);
   track.push([lat,lon]); if(track.length>600) track.shift();
   trkLine.setLatLngs(track);
   $('trkCnt').textContent='轨迹 '+track.length+' 点';
   map.panTo([lat,lon]);
-  if(home&&isFinite(home[0])) homeMk.setLatLng([home[0],home[1]]);
+  if(home&&isFinite(home[0])&&isFinite(home[1])){
+    if(!homeOn){ homeMk.addTo(map); homeOn=true; }
+    homeMk.setLatLng([home[0],home[1]]);
+  }
 }
 function haversine(lat1,lon1,lat2,lon2){
   var R=6371000,toRad=Math.PI/180;
