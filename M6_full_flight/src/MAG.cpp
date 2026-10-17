@@ -112,10 +112,6 @@ void mag_cal_start() {
   cal_init = false;
 }
 
-bool mag_cal_active() {
-  return cal_active;
-}
-
 int mag_cal_step() {
   if (!cal_active) return 0;
   int16_t mx, my, mz;

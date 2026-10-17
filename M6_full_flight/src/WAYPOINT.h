@@ -58,7 +58,6 @@ typedef struct {
   int     total;           // 航点总数
 } WP_Output;
 
-void      wp_begin();                                  // 初始化
 bool      wp_add_point(float lat, float lon, float alt); // 添加航点（最多 WP_MAX 个）
 void      wp_clear();                                  // 清空航线（含停止）
 bool      wp_start();                                  // 开始执行航线（列表非空才成功）

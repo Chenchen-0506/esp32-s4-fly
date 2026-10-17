@@ -30,7 +30,6 @@ void mag_load_cal();                  // 开机：从 NVS 加载校准值
 void mag_cal_start();                 // 开始校准采样（清空极值）
 int  mag_cal_step();                  // 采样推进：0=进行中 1=完成（已保存）
 void mag_cal_finish();                // 立即用当前极值计算并保存（提前结束用）
-bool mag_cal_active();                // 是否在校准中
 void mag_read(float &headingDeg);     // 读取航向（应用偏移 + 磁偏角）
 
 bool mag_begin();

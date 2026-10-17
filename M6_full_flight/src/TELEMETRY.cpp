@@ -377,7 +377,10 @@ static void handle_wp() {
 bool tel_wp_cmd(const String &line) {
   String l = line;
   l.trim();
-  if (l.startsWith("WP:ADD")) {
+  // 命令关键字统一转大写，兼容 WiFi 网页小写（如 WP:add）与数传大写两种下行
+  String up = l;
+  up.toUpperCase();
+  if (up.startsWith("WP:ADD")) {
     int c1 = l.indexOf(',');
     if (c1 < 0) return false;
     int c2 = l.indexOf(',', c1 + 1);
@@ -389,9 +392,9 @@ bool tel_wp_cmd(const String &line) {
     if (lat == 0 && lon == 0) return false;
     return wp_add_point(lat, lon, alt);
   }
-  if (l == "WP:CLEAR") { wp_clear(); wp_pending = false; return true; }
-  if (l == "WP:START") { if (wp_start()) { wp_pending = true; return true; } return false; }
-  if (l == "WP:STOP")  { wp_pending = false; wp_stop(); return true; }
+  if (up == "WP:CLEAR") { wp_clear(); wp_pending = false; return true; }
+  if (up == "WP:START") { if (wp_start()) { wp_pending = true; return true; } return false; }
+  if (up == "WP:STOP")  { wp_pending = false; wp_stop(); return true; }
   return false;
 }
 

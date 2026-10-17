@@ -43,10 +43,6 @@ static float wrap180(float a) {
   return a;
 }
 
-void wp_begin() {
-  wp_stop();
-}
-
 bool wp_add_point(float lat, float lon, float alt) {
   if (wp_count >= WP_MAX) return false;
   if (fabsf(lat) > 90.0f || fabsf(lon) > 180.0f) return false;
