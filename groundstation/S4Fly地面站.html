@@ -78,6 +78,9 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .lg-trk{height:3px;border-radius:2px;background:#38bdf8;vertical-align:middle;}
 .maph{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
 .maph .st{font-size:11px;color:#94a3b8;}
+.srcsel{display:inline-flex;align-items:center;gap:4px;margin-left:8px;}
+.srcsel .srcbtn{background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;}
+.srcsel .srcbtn.on{background:#2563eb;border-color:#2563eb;color:#fff;}
 .mk-drone{background:transparent;border:none;}
 .mk-drone svg{filter:drop-shadow(0 0 6px #22c55e);}
 .leaflet-container{font-family:inherit;}
@@ -203,7 +206,11 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
       <div class="st"><span id="mapFollow">跟随中</span> · <span id="trkCnt">轨迹 0 点</span>
         <button class="btn sm" onclick="toggleFollow()" style="margin-left:6px;">跟随/自由</button>
         <button class="btn sm off" onclick="clearTrack()">清空轨迹</button>
-        <button class="btn sm" id="btnSrc" onclick="switchTileSource(srcIdx+1,false)" title="点击切换 高德/卫星 地图源">来源: <span id="mapSrc">高德</span></button>
+        <span class="srcsel">来源:
+          <button class="srcbtn on" id="srcBtn0" onclick="switchTileSource(0,false)">高德</button>
+          <button class="srcbtn" id="srcBtn1" onclick="switchTileSource(1,false)">卫星</button>
+          <button class="srcbtn" id="srcBtn2" onclick="switchTileSource(2,false)">Esri卫星</button>
+        </span>
       </div>
     </div>
     <div id="mapWrap">
@@ -288,8 +295,8 @@ var TILE_SOURCES=[
   {name:'Esri卫星', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts:{maxZoom:18}, attr:'© Esri'}
 ];
 var srcIdx=0, tileErr=0, tileLayer=null, switchCount=0, loadWatch=null;
-function switchTileSource(idx, silent){
-  srcIdx=idx%TILE_SOURCES.length;
+window.switchTileSource=function(idx, silent){
+  srcIdx=((idx%TILE_SOURCES.length)+TILE_SOURCES.length)%TILE_SOURCES.length;
   var s=TILE_SOURCES[srcIdx];
   if(tileLayer) map.removeLayer(tileLayer);
   tileErr=0;
@@ -297,9 +304,12 @@ function switchTileSource(idx, silent){
   tileLayer=L.tileLayer(s.url,s.opts).addTo(map);
   tileLayer.on('tileerror',function(){
     tileErr++;
-    if(tileErr>=4 && TILE_SOURCES.length>1){ switchTileSource(srcIdx+1,true); }
+    if(tileErr>=6 && TILE_SOURCES.length>1){ switchTileSource(srcIdx+1,true); }
   });
-  $('mapSrc').textContent=s.name;
+  for(var i=0;i<TILE_SOURCES.length;i++){
+    var b=$('srcBtn'+i);
+    if(b) b.className='srcbtn'+(i===srcIdx?' on':'');
+  }
   if(!silent && switchCount>1) $('trkCnt').textContent='已切换地图源: '+s.name;
   startLoadWatch();
 }
@@ -311,7 +321,7 @@ function startLoadWatch(){
     var tps=document.querySelectorAll('#map .leaflet-tile-loaded').length;
     if(tps>0){ clearInterval(loadWatch); return; }
     fails++;
-    if(fails>=3){
+    if(fails>=10){
       if(switchCount<8){
         switchTileSource(srcIdx+1,true);
       }else{
