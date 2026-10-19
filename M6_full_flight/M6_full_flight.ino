@@ -71,17 +71,13 @@
 #include "src/LOGGER.h"    // 飞行黑匣子（RAM 环形 + Flash 落盘，串口 D 导出）
 #include "src/TELEMETRY.h" // WiFi 实时看板（手机连热点浏览器查看/下载）
 #include "src/LINK.h"     // 数传链路（UART1：TX=14 RX=15，57600）
+#include "src/PARAM.h"    // 参数在线调整（PARAM:SET/GET/RESET，NVS 持久化）
 
 /* ============================================================================
  * 控制环常量
  * ========================================================================== */
 #define LOOP_HZ               1000
 #define LOOP_US               (1000000UL / LOOP_HZ)
-
-/* ---- 角度外环参数（串级 PID 外环，内环参数在 PID.h）---- */
-#define ANGLE_P_ROLL          4.0f
-#define ANGLE_P_PITCH         4.0f
-#define ANGLE_P_YAW           2.0f
 
 /* ---- 遥控通道映射（FlySky：CH1~CH6）---- */
 #define CH_ROLL               0    // CH1
@@ -218,10 +214,13 @@ void setup() {
   Serial.printf("[ALT] 定高/悬停就绪，悬停油门基准 %.0fµs（CH7 高进入；悬停中自动学习）\n",
                 althold_hover_thr());
 
-  // ---- PID 初始化（内环）----
-  pid_init(&pid_roll_rate,  RATE_P_ROLL,  RATE_I_ROLL,  RATE_D_ROLL);
-  pid_init(&pid_pitch_rate, RATE_P_PITCH, RATE_I_PITCH, RATE_D_PITCH);
-  pid_init(&pid_yaw_rate,   RATE_P_YAW,   RATE_I_YAW,   RATE_D_YAW);
+  // ---- 参数加载（NVS，可在线调整）----
+  param_begin();
+
+  // ---- PID 初始化（内环，参数来自 PARAM）----
+  pid_init(&pid_roll_rate,  rate_p_roll,  rate_i_roll,  rate_d_roll);
+  pid_init(&pid_pitch_rate, rate_p_pitch, rate_i_pitch, rate_d_pitch);
+  pid_init(&pid_yaw_rate,   rate_p_yaw,   rate_i_yaw,   rate_d_yaw);
 
   Serial.println();
   Serial.println("=== 就绪 ===");
@@ -574,14 +573,14 @@ void loop() {
       yaw_target_rate  = ph_yaw_cmd;
     } else {
       // 自稳模式：目标角度 = 摇杆量 * 最大倾斜角
-      roll_angle_err   = roll_cmd  * 25.0f - roll_deg;   // 最大倾斜 25 度
-      pitch_angle_err  = pitch_cmd * 25.0f - pitch_deg;
-      yaw_target_rate  = yaw_cmd * 100.0f;              // 偏航手动
+      roll_angle_err   = roll_cmd  * max_tilt_manu - roll_deg;
+      pitch_angle_err  = pitch_cmd * max_tilt_manu - pitch_deg;
+      yaw_target_rate  = yaw_cmd * yaw_rate_manu;
     }
 
     // 内环：角速度 PID（误差 = 目标角速度 - 实测角速度）
-    float roll_rate_err  = (roll_angle_err  * ANGLE_P_ROLL)  - gyr_dps[0];
-    float pitch_rate_err = (pitch_angle_err * ANGLE_P_PITCH) - gyr_dps[1];
+    float roll_rate_err  = (roll_angle_err  * angle_p_roll)  - gyr_dps[0];
+    float pitch_rate_err = (pitch_angle_err * angle_p_pitch) - gyr_dps[1];
     float yaw_rate_err   = yaw_target_rate - gyr_dps[2];
 
     float roll_out  = pid_calc(&pid_roll_rate,  roll_rate_err,  dt);

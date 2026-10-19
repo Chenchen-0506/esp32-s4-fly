@@ -8,6 +8,8 @@
 #include "TELEMETRY.h"
 #include "LOGGER.h"
 #include "WAYPOINT.h"
+#include "PARAM.h"
+#include "LINK.h"
 
 extern bool wp_pending;   // 主程序定义：航点请求标志
 #include <WiFi.h>
@@ -395,6 +397,35 @@ bool tel_wp_cmd(const String &line) {
   if (up == "WP:CLEAR") { wp_clear(); wp_pending = false; return true; }
   if (up == "WP:START") { if (wp_start()) { wp_pending = true; return true; } return false; }
   if (up == "WP:STOP")  { wp_pending = false; wp_stop(); return true; }
+
+  /* ---- 参数在线调整（PARAM:SET key=val / PARAM:GET / PARAM:RESET）---- */
+  if (up.startsWith("PARAM:SET ")) {
+    String kv = l.substring(9);
+    kv.trim();
+    int eq = kv.indexOf('=');
+    if (eq > 0) {
+      String k = kv.substring(0, eq);
+      k.trim();
+      float v = kv.substring(eq + 1).toFloat();
+      if (param_set(k.c_str(), v)) {
+        link_send("PARAM:OK " + k + "=" + String(v, 4));
+        Serial.println("[PARAM] " + k + "=" + String(v, 4));
+        return true;
+      }
+    }
+    link_send("PARAM:ERR " + kv);
+    return true;
+  }
+  if (up == "PARAM:GET") {
+    link_send("PARAM:JSON " + param_json());
+    return true;
+  }
+  if (up == "PARAM:RESET") {
+    param_reset();
+    link_send("PARAM:OK reset");
+    Serial.println("[PARAM] 全部参数已恢复默认");
+    return true;
+  }
   return false;
 }
 

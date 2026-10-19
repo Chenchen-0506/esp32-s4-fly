@@ -4,6 +4,7 @@
  * ============================================================================
  */
 #include "RTL.h"
+#include "PARAM.h"
 #include <math.h>
 
 static float home_lat = 0, home_lon = 0;
@@ -107,8 +108,8 @@ RTL_Output rtl_update(bool armed, bool rc_lost,
       out.target_roll = 0;
       out.target_pitch = 0;
       out.target_yaw_rate = 0;
-      if (rel_alt < RTL_ALT - 1.0f) {
-        out.throttle_us = RTL_CLIMB_THR;
+      if (rel_alt < rtl_alt - 1.0f) {
+        out.throttle_us = rtl_climb_thr;
       } else {
         out.mode = RTL_FLY;
         out.throttle_us = RTL_CRUISE_THR;
@@ -117,26 +118,26 @@ RTL_Output rtl_update(bool armed, bool rc_lost,
     }
     case RTL_FLY: {
       // 高度保持：低于巡航高度就补油门，高于则收
-      if (rel_alt < RTL_ALT - 1.5f)      out.throttle_us = RTL_CLIMB_THR;
-      else if (rel_alt > RTL_ALT + 1.5f) out.throttle_us = RTL_DESCEND_THR;
-      else                               out.throttle_us = RTL_CRUISE_THR;
+      if (rel_alt < rtl_alt - 1.5f)      out.throttle_us = rtl_climb_thr;
+      else if (rel_alt > rtl_alt + 1.5f) out.throttle_us = rtl_descend_thr;
+      else                               out.throttle_us = rtl_cruise_thr;
 
       // 机头对准 home 方向（用罗盘航向）
       float b = bearing_to_home(lat, lon);
       float yaw_err = wrap180(b - heading);
-      out.target_yaw_rate = RTL_YAW_P * yaw_err;
+      out.target_yaw_rate = rtl_yaw_p * yaw_err;
       if (out.target_yaw_rate >  RTL_YAW_RATE_MAX) out.target_yaw_rate =  RTL_YAW_RATE_MAX;
       if (out.target_yaw_rate < -RTL_YAW_RATE_MAX) out.target_yaw_rate = -RTL_YAW_RATE_MAX;
 
       // 机头对准后给前进倾斜（P 控制距离）
-      float pitch_cmd = RTL_PITCH_P * (out.home_dist - RTL_NEAR);
-      if (pitch_cmd >  RTL_MAX_TILT) pitch_cmd =  RTL_MAX_TILT;
-      if (pitch_cmd < -RTL_MAX_TILT) pitch_cmd = -RTL_MAX_TILT;
+      float pitch_cmd = rtl_pitch_p * (out.home_dist - rtl_near);
+      if (pitch_cmd >  rtl_max_tilt) pitch_cmd =  rtl_max_tilt;
+      if (pitch_cmd < -rtl_max_tilt) pitch_cmd = -rtl_max_tilt;
       out.target_pitch = pitch_cmd;
       out.target_roll  = 0;
 
       // 接近 home 进入降落（水平修正由 DESCEND 分支保留）
-      if (out.home_dist < RTL_NEAR) {
+      if (out.home_dist < rtl_near) {
         out.mode = RTL_DESCEND;
         descend_start_ms = millis();
       }
@@ -146,15 +147,15 @@ RTL_Output rtl_update(bool armed, bool rc_lost,
       // 缓降 + 保留水平位置修正（机头对准 home、距离 P 控制，限幅更小）
       // —— 边缓降边回到 home 正上方，落点不再被风推偏
       out.target_roll = 0;
-      out.throttle_us = RTL_DESCEND_THR;
+      out.throttle_us = rtl_descend_thr;
 
       float b = bearing_to_home(lat, lon);
       float yaw_err = wrap180(b - heading);
-      out.target_yaw_rate = RTL_YAW_P * yaw_err;
+      out.target_yaw_rate = rtl_yaw_p * yaw_err;
       if (out.target_yaw_rate >  RTL_YAW_RATE_MAX) out.target_yaw_rate =  RTL_YAW_RATE_MAX;
       if (out.target_yaw_rate < -RTL_YAW_RATE_MAX) out.target_yaw_rate = -RTL_YAW_RATE_MAX;
 
-      float pitch_cmd = RTL_PITCH_P * (out.home_dist - RTL_NEAR);
+      float pitch_cmd = rtl_pitch_p * (out.home_dist - rtl_near);
       if (pitch_cmd >  RTL_DESCEND_MAX_TILT) pitch_cmd =  RTL_DESCEND_MAX_TILT;
       if (pitch_cmd < -RTL_DESCEND_MAX_TILT) pitch_cmd = -RTL_DESCEND_MAX_TILT;
       out.target_pitch = pitch_cmd;

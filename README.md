@@ -52,7 +52,7 @@ M6_full_flight/
     └── MAG_DECL_TABLE.h      # 磁偏角全球查表（NOAA WMM，10° 网格）
 ```
 
-## 功能总览（v0.22）
+## 功能总览（v0.23）
 
 | 类别 | 功能 | 版本 |
 |---|---|---|
@@ -84,6 +84,7 @@ M6_full_flight/
 | 数据 | 遥控信号质量 RSSI（iBus 帧接收率 0~100%，遥测 `rssi`，信号条显示+弱信号预警） | v0.22 |
 | 数据 | 磁校准完成标志（遥测 `magCal`，NVS 持久化） | v0.22 |
 | 数据 | 地面站起飞检查清单（GPS/星数/HOME/磁校准/信号，全绿提示可起飞）+ 声音报警（失控缓降/断连/数据超时蜂鸣） | v0.22 |
+| 控制 | 参数在线调整（PARAM:SET/GET/RESET，30 项：PID/定高/返航/油门，立即生效+NVS 持久化，地面站面板操作） | v0.23 |
 | 工具 | 电调校准 M4_esc_test（四路同时校准/测试） | v0.13 |
 | 工程 | 模块化 src/（15 功能模块 + WMM 查表）+ GitHub 开源（30 个版本标签回档）；地面站中文状态徽章 / CH5/6 功能显示 / 日志窗常驻 | v0.1~v0.21.6 |
 
@@ -116,6 +117,16 @@ M6_full_flight/
   - 高度保持：定高 PID（悬停油门自动学习，10 秒持久化到 NVS，下次开机自动加载）
   - 位置保持：位置误差→倾角（死区 1.5m 压制 GPS 噪声，限幅 15°），摇杆=移动悬停目标点
 - **CH7 拨低**：退出，恢复纯手动
+
+### 参数在线调整（PARAM，v0.23）
+
+- 无需重新烧录：地面站「参数在线调整」面板读取/修改 30 项飞控参数，立即生效并写入 NVS（掉电保留）
+- 命令协议（数传/串口/WiFi 下行通用）：
+  - `PARAM:GET` → 回执 `PARAM:JSON {"key":val,...}`（全部参数）
+  - `PARAM:SET key=value` → 回执 `PARAM:OK key=value`（已写入 NVS）/ `PARAM:ERR ...`
+  - `PARAM:RESET` → 全部恢复默认
+- 参数表（30 项）：内环 PID `rate_p/i/d_{roll,pitch,yaw}`、积分限幅 `rate_i_limit`、外环 `angle_p_{roll,pitch,yaw}`、定高 `alt_p/alt_stick_k/alt_stick_db/alt_vs_max/vel_p/vel_i/thr_i_limit`、返航 `rtl_alt/rtl_near/rtl_climb_thr/rtl_cruise_thr/rtl_descend_thr/rtl_max_tilt/rtl_pitch_p/rtl_yaw_p`、自稳 `max_tilt_manu/yaw_rate_manu`
+- 注意：飞行中仅建议小幅微调 PID；返航高度等请在起飞前改好
 
 ### 起飞检查清单（v0.22）
 
@@ -371,6 +382,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.21.7-readme-tutorial`：README 新增快速开始（安装教程）+ 地面站使用教程（连接/界面/状态徽章/航点/共享/CSV/FAQ）
   - `v0.21.8-gs-replay`：地面站飞行轨迹回放（CSV 导入→地图回放，速度/进度/参数面板）
   - `v0.22-rssi-checklist-alarm`：遥控信号质量（帧接收率）+ 磁校准标志遥测 + 地面站起飞检查清单与声音报警
+  - `v0.23-param-online`：参数在线调整（PARAM:SET/GET/RESET，30 项 PID/定高/返航参数，地面站面板，NVS 持久化）
 - 注：v0.2/v0.3 未单独打 tag（并入 v0.4-M7 前后历史提交）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述

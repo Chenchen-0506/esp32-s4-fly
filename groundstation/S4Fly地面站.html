@@ -119,6 +119,26 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .chk-no{border-color:#ef4444;color:#f87171;}
 .chkverdict{margin-top:8px;font-size:14px;font-weight:700;color:#94a3b8;}
 .verdict-ok{color:#4ade80;}.verdict-warn{color:#fbbf24;}.verdict-no{color:#f87171;}
+
+
+.paramtools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;}
+.paramtip{font-size:11px;color:#64748b;}
+.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
+.prow{display:flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1f2c3d;border-radius:8px;padding:6px 8px;font-size:12px;}
+.pk{color:#7dd3fc;font-family:Consolas,monospace;min-width:110px;}
+.pn{color:#64748b;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pv{color:#4ade80;min-width:52px;text-align:right;font-family:Consolas,monospace;}
+.pin{width:72px;background:#0b1220;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:3px 5px;font-size:12px;font-family:Consolas,monospace;}
+.pin:focus{outline:none;border-color:#38bdf8;}
+.paramtools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;}
+.paramtip{font-size:11px;color:#64748b;}
+.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
+.prow{display:flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1f2c3d;border-radius:8px;padding:6px 8px;font-size:12px;}
+.pk{color:#7dd3fc;font-family:Consolas,monospace;min-width:110px;}
+.pn{color:#64748b;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pv{color:#4ade80;min-width:52px;text-align:right;font-family:Consolas,monospace;}
+.pin{width:72px;background:#0b1220;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:3px 5px;font-size:12px;font-family:Consolas,monospace;}
+.pin:focus{outline:none;border-color:#38bdf8;}
 .rpbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
 .rpbar .btn{min-width:70px;}
 .rpspd{display:flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;}
@@ -319,7 +339,20 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="chkverdict" id="chkVerdict">未连接</div>
   </div>
 
+
+  <!-- 参数在线调整 -->
+  <div class="card c-13">
+    <h3>参数在线调整（PARAM：立即生效+NVS保存，无需重烧）</h3>
+    <div class="paramtools">
+      <button class="btn" onclick="paramGet()">读取参数</button>
+      <button class="btn off" onclick="paramReset()">恢复默认</button>
+      <span class="paramtip">修改后点「应用」，固件回执 PARAM:OK 即已写入；飞行中仅建议微调 PID</span>
+    </div>
+    <div class="paramgrid" id="paramGrid"></div>
+  </div>
+
   <!-- 电机 -->
+
 
   <!-- 电机 -->
   <div class="card c-12">
@@ -564,6 +597,7 @@ function handleLine(ln){
   ln=ln.trim();
   if(!ln) return;
   appendLog(ln,'jline');
+  if(paramLine(ln)) return;
   var d=null;
   try{ d=JSON.parse(ln); }catch(e){ appendLog('⚠ 非JSON行：'+ln.slice(0,120),'rowline'); return; }
   if(d&&d.t){
@@ -658,6 +692,7 @@ window.toggleShare=function(){
 };
 /* 打开页面自动开启共享（用户上次手动关闭过则不自动开） */
 window.addEventListener('load',function(){
+  paramInit();
   if(localStorage.getItem('shareOff')!=='1') toggleShare();
 });
 
@@ -817,6 +852,47 @@ function alertCheck(){
   if(!connected&&alConn){ beep(220,300,1,0); alConn=false; }                      // 断连
   if(connected&&dataAge===21&&!alWarned){ beep(440,200,2,250); alWarned=true; }   // 数据超时
   if(connected&&dataAge<20) alWarned=false;
+}
+
+
+/* ================= 参数在线调整（PARAM） ================= */
+var PARAM_KEYS=['rate_p_roll','rate_i_roll','rate_d_roll','rate_p_pitch','rate_i_pitch','rate_d_pitch','rate_p_yaw','rate_i_yaw','rate_d_yaw','rate_i_limit','angle_p_roll','angle_p_pitch','angle_p_yaw','alt_p','alt_stick_k','alt_stick_db','alt_vs_max','vel_p','vel_i','thr_i_limit','rtl_alt','rtl_near','rtl_climb_thr','rtl_cruise_thr','rtl_descend_thr','rtl_max_tilt','rtl_pitch_p','rtl_yaw_p','max_tilt_manu','yaw_rate_manu'];
+var PARAM_NAMES={'rate_p_roll':'内环横滚P','rate_i_roll':'内环横滚I','rate_d_roll':'内环横滚D','rate_p_pitch':'内环俯仰P','rate_i_pitch':'内环俯仰I','rate_d_pitch':'内环俯仰D','rate_p_yaw':'内环偏航P','rate_i_yaw':'内环偏航I','rate_d_yaw':'内环偏航D','rate_i_limit':'内环积分限幅','angle_p_roll':'外环横滚P','angle_p_pitch':'外环俯仰P','angle_p_yaw':'外环偏航P','alt_p':'高度→垂速P','alt_stick_k':'油门杆灵敏度','alt_stick_db':'油门杆死区(µs)','alt_vs_max':'垂速限幅(cm/s)','vel_p':'垂速→油门P','vel_i':'垂速积分I','thr_i_limit':'油门积分限幅','rtl_alt':'返航高度(m)','rtl_near':'返航降落距离(m)','rtl_climb_thr':'爬升油门(µs)','rtl_cruise_thr':'巡航油门(µs)','rtl_descend_thr':'缓降油门(µs)','rtl_max_tilt':'返航最大倾角(°)','rtl_pitch_p':'返航前进P','rtl_yaw_p':'返航偏航P','max_tilt_manu':'自稳最大倾角(°)','yaw_rate_manu':'自稳偏航率(°/s)'};
+function paramInit(){
+  var g=$('paramGrid'); g.innerHTML='';
+  PARAM_KEYS.forEach(function(k){
+    var r=document.createElement('div'); r.className='prow';
+    r.innerHTML='<span class="pk">'+k+'</span><span class="pn">'+PARAM_NAMES[k]+'</span>'+
+      '<span class="pv" id="pv_'+k+'">--</span>'+
+      '<input class="pin" id="pin_'+k+'" type="number" step="any" placeholder="新值">'+
+      '<button class="btn" data-k="'+k+'" onclick="paramApply(this)">应用</button>';
+    g.appendChild(r);
+  });
+}
+function paramLoad(j){
+  for(var k in PARAM_NAMES){
+    if(j&&typeof j[k]==='number'){
+      var e=$('pv_'+k); if(e) e.textContent=j[k];
+    }
+  }
+}
+window.paramGet=function(){ sendLine('PARAM:GET'); };
+window.paramReset=function(){ if(confirm('确认恢复全部参数为默认值？')) sendLine('PARAM:RESET'); };
+window.paramApply=function(btn){
+  var k=btn.getAttribute('data-k');
+  var v=parseFloat($('pin_'+k).value);
+  if(isNaN(v)){ alert('请输入有效数值'); return; }
+  sendLine('PARAM:SET '+k+'='+v);
+};
+function paramLine(ln){
+  if(ln.slice(0,11)==='PARAM:JSON '){
+    try{ paramLoad(JSON.parse(ln.slice(11))); appendLog('PARAM> 已读取 '+Object.keys(PARAM_NAMES).length+' 项','rowline'); }
+    catch(e){ appendLog('PARAM 解析失败','eline'); }
+    return true;
+  }
+  if(ln.slice(0,9)==='PARAM:OK '||ln==='PARAM:OK reset'){ appendLog('PARAM> '+ln.slice(9),'rowline'); return true; }
+  if(ln.slice(0,10)==='PARAM:ERR '){ appendLog('⚠ '+ln,'eline'); return true; }
+  return false;
 }
 
 /* ================= 飞行轨迹回放（CSV 导入） ================= */

@@ -6,6 +6,7 @@
  * ============================================================================
  */
 #include "ALTHOLD.h"
+#include "PARAM.h"
 #include <Preferences.h>
 
 static bool      active = false;
@@ -70,28 +71,28 @@ uint16_t althold_update(float rel_alt, float vert_vel, float stick_thr) {
   // 油门杆 → 目标垂速（死区 + 限幅）
   float stick_d = stick_thr - 1500.0f;
   float stick_vs = 0;
-  if (stick_d >  ALT_STICK_DB) stick_vs =  (stick_d - ALT_STICK_DB) * ALT_STICK_K;
-  if (stick_d < -ALT_STICK_DB) stick_vs =  (stick_d + ALT_STICK_DB) * ALT_STICK_K;
-  if (stick_vs >  ALT_VS_MAX) stick_vs =  ALT_VS_MAX;
-  if (stick_vs < -ALT_VS_MAX) stick_vs = -ALT_VS_MAX;
+  if (stick_d >  alt_stick_db) stick_vs =  (stick_d - alt_stick_db) * alt_stick_k;
+  if (stick_d < -alt_stick_db) stick_vs =  (stick_d + alt_stick_db) * alt_stick_k;
+  if (stick_vs >  alt_vs_max) stick_vs =  alt_vs_max;
+  if (stick_vs < -alt_vs_max) stick_vs = -alt_vs_max;
 
   // 高度误差 → 修正垂速（ArduPilot AltHold P）
   float alt_err = target_alt - rel_alt;
-  float target_vs = stick_vs + ALT_P * alt_err;
+  float target_vs = stick_vs + alt_p * alt_err;
   if (target_vs >  200.0f) target_vs =  200.0f;
   if (target_vs < -200.0f) target_vs = -200.0f;
 
   // 垂速误差 → PID → 油门
   float vs_err = target_vs - vert_spd;
-  thr_i += vs_err * dt * VEL_I;
-  if (thr_i >  THR_I_LIMIT) thr_i =  THR_I_LIMIT;
-  if (thr_i < -THR_I_LIMIT) thr_i = -THR_I_LIMIT;
+  thr_i += vs_err * dt * vel_i;
+  if (thr_i >  thr_i_limit) thr_i =  thr_i_limit;
+  if (thr_i < -thr_i_limit) thr_i = -thr_i_limit;
 
-  float thr = hover_thr + VEL_P * vs_err + thr_i;
+  float thr = hover_thr + vel_p * vs_err + thr_i;
   last_out = (uint16_t)constrain(thr, 1000.0f, 2000.0f);
 
   // ---- 悬停油门自动学习（悬停稳定时向当前油门收敛）----
-  if (fabsf(stick_d) < ALT_STICK_DB &&   // 油门杆在中位（无主动升降意图）
+  if (fabsf(stick_d) < alt_stick_db &&   // 油门杆在中位（无主动升降意图）
       fabsf(alt_err) < HOVER_MAX_ALT_ERR &&  // 高度误差小
       fabsf(vert_spd) < HOVER_MAX_VS) {      // 垂速小（近似悬停）
     hover_thr += ((float)last_out - hover_thr) * HOVER_LEARN_RATE;
