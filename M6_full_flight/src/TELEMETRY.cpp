@@ -387,10 +387,10 @@ bool tel_wp_cmd(const String &line) {
     if (c1 < 0) return false;
     int c2 = l.indexOf(',', c1 + 1);
     if (c2 < 0) return false;
+    int c3 = l.indexOf(',', c2 + 1);
     float lat = l.substring(c1 + 1, c2).toFloat();
-    float lon = l.substring(c2 + 1).toFloat();
-    int   c3 = l.indexOf(',', c2 + 1);
-    float alt = (c3 > 0) ? l.substring(c2 + 1, c3).toFloat() : l.substring(c2 + 1).toFloat();
+    float lon = l.substring(c2 + 1, (c3 > 0) ? c3 : l.length()).toFloat();
+    float alt = (c3 > 0) ? l.substring(c3 + 1).toFloat() : 30.0f;   // 无高度默认 30m
     if (lat == 0 && lon == 0) return false;
     return wp_add_point(lat, lon, alt);
   }

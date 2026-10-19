@@ -10,6 +10,7 @@ static String link_buf;
 
 void link_begin() {
   link_ser.begin(LINK_BAUD, SERIAL_8N1, LINK_RX_PIN, LINK_TX_PIN);
+  link_ser.setTxBufferSize(2048);   // 大 TX 缓冲：10Hz 遥测帧(~400B)写入缓冲即返回，不阻塞 1kHz 控制环
   link_buf.reserve(256);
 }
 

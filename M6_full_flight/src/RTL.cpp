@@ -112,7 +112,7 @@ RTL_Output rtl_update(bool armed, bool rc_lost,
         out.throttle_us = rtl_climb_thr;
       } else {
         out.mode = RTL_FLY;
-        out.throttle_us = RTL_CRUISE_THR;
+        out.throttle_us = rtl_cruise_thr;   // 用在线可调参数（与 FLY 段一致）
       }
       break;
     }

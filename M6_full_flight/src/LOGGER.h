@@ -22,12 +22,12 @@
 
 #define LOG_LINES     512      // RAM 环形容量（行）
 #define LOG_LINE_LEN  200      // 每行最大字符（含换行，现有打印行约 162 字符，留余量防 -Wformat-truncation）
-#define LOG_SAVE_MS   60000UL  // Flash 落盘周期（ms）
+#define LOG_SAVE_MS   30000UL  // Flash 落盘周期（ms）：30s×10 行=300 行 < RAM 环形 512，避免环形覆盖错位
 #define LOG_FILE_MAX  1000000UL // 黑匣子文件上限（字节）
 
 void  logger_begin();                 // 挂载 LittleFS（失败仅警告，不阻塞飞行）
 void  logger_log(const char* line);   // 压入环形（覆盖最旧），供 WiFi/落盘
-void  logger_tick();                  // 主循环每环调用（内部 60s 落盘节拍）
+void  logger_tick(bool armed);        // 主循环每环调用（飞行中仅存 RAM 不落盘，防 Flash 写阻塞控制环；上锁/降落后 flush 全量）
 void  logger_flush();                 // 立即把未落盘的新行写入 Flash（上锁/降落时）
 void  logger_dump_all();              // 串口导出黑匣子全部日志（'D' 命令）
 uint32_t logger_seq();                // 当前总行数（WiFi 增量拉取用）

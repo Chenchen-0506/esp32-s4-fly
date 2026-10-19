@@ -6,14 +6,15 @@
  *   0x20 0x40 | CH1L CH1H ... CH14L CH14H | CHECK_L CHECK_H
  *   通道值小端 2 字节，1000~2000µs 直接对应
  *   校验和 = 0xFFFF - Σ(前 30 字节)，低字节在前（高字节通常 0x00）
- * 串口：19200 baud 8N1，RX=GPIO18，无需反相
+ * 串口：19200 baud 8N1，RX=GPIO44（UART0，与 GPS 的 UART2 分离），无需反相
  * ============================================================================
  */
 #include "SBUS.h"
 
+static HardwareSerial sbus_ser(0);   // UART0（GPIO44 RX；GPS 已占用 UART2）
+
 uint16_t rc_ch[16] = {1500, 1500, 1000, 1500, 1500, 1500, 1500, 1500,
                       1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500};
-bool     rc_failsafe = false;
 
 static uint32_t rc_last_frame_ms = 0;
 /* 信号质量：最近 1 秒实际 iBus 帧数 / 期望帧数（约 130 帧/s，7.7ms 周期） */
@@ -23,8 +24,9 @@ static uint32_t rc_sec_anchor = 0;
 static uint8_t  rc_sig = 100;
 
 void sbus_begin() {
-  // iBus：19200 波特、8N1、RX=GPIO18（无需反相）
-  Serial2.begin(SBUS_BAUD, SERIAL_8N1, SBUS_RX_PIN, -1);
+  // iBus：19200 波特、8N1、RX=GPIO44（UART0；无需反相）
+  sbus_ser.begin(SBUS_BAUD, SERIAL_8N1, SBUS_RX_PIN, -1);
+  rc_last_frame_ms = millis();   // 上电即视为有帧，避免首秒误判丢信号
 }
 
 bool sbus_parse(const uint8_t *b) {

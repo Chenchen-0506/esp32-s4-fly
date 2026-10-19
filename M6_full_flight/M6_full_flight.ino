@@ -11,7 +11,7 @@
  *   src/GPS.h/.cpp        BN-880 NMEA 解析（定位/卫星/经纬度）
  *   src/MAG.h/.cpp        BN-880 内置罗盘（航向读取）
  *   src/RTL.h/.cpp        返航状态机（手动/失控自动返航）
- *   src/SBUS.h/.cpp       iBus 遥控解析（GPIO18 19200 8N1，FS-iA6B）
+ *   src/SBUS.h/.cpp       iBus 遥控解析（GPIO44 19200 8N1，FS-iA6B；UART0，与 GPS 的 UART2 分离）
  *   src/PID.h/.cpp        串级 PID 控制器（含内环参数）
  *   src/Motors.h/.cpp     4 路电调 PWM 输出
  * 主文件只保留：引脚/常量的应用层定义、setup、1kHz 控制环、解锁/上锁
@@ -28,7 +28,7 @@
  *   ICM-20948 SPI：SCK=12 MISO=13 MOSI=11 CS=10（3V3）
  *   BMP280 I2C  ：SDA=8  SCL=9
  *   BN-880 GPS  ：RX=16  TX=17（罗盘共用 I2C：SDA=8 SCL=9）
- *   iBus 接收机  ：RX=18（19200 8N1，FS-iA6B，无需反相）
+ *   iBus 接收机  ：RX=44（UART0，19200 8N1，FS-iA6B，无需反相；⚠ GPS 已占用 UART2(16/17)）
  *   电机 PWM     ：M1=4  M2=5  M3=6  M4=7（50Hz，1000-2000µs）
  *   数传 LINK   ：TX=14 RX=15（UART1，57600 8N1，模块可更换）
  *   电调 BEC 红线全挑出！全机 5V = 好盈 UBEC
@@ -170,7 +170,7 @@ void setup() {
 
   // ---- 遥控（iBus）初始化 ----
   sbus_begin();
-  Serial.println("[RC] iBus(FS-iA6B) GPIO18 19200 8N1");
+  Serial.println("[RC] iBus(FS-iA6B) GPIO44(UART0) 19200 8N1");
 
   // ---- BMP280 气压计 ----
   bmp_ok = bmp_begin();
@@ -724,7 +724,7 @@ void loop() {
   }
 
   // ---- 9. 黑匣子节拍 + WiFi 看板服务 ----
-  logger_tick();
+  logger_tick(armed);   // 飞行中只存 RAM 不落盘，防 Flash 写阻塞 1kHz 环
   telemetry_poll();
 
   // 严格 1kHz 节拍

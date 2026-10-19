@@ -63,7 +63,11 @@ static void log_append_to_file() {
   }
 }
 
-void logger_tick() {
+void logger_tick(bool armed) {
+  // 飞行中（armed）不落盘：LittleFS 写入会阻塞控制环（数毫秒~百毫秒），
+  // 对 1kHz 姿态环是致命的。飞行日志全量由地面站 CSV 实时记录（10Hz 遥测上行），
+  // 板载黑匣子保留 RAM 最近 512 行（约 51 秒）作离线兜底，上锁/降落时 logger_flush() 落盘。
+  if (armed) return;
   uint32_t now = millis();
   if (now - last_save_ms >= LOG_SAVE_MS) {
     last_save_ms = now;

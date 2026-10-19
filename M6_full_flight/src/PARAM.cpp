@@ -78,10 +78,7 @@ void param_reset() {
   p.begin(NVS_NS, false);
   p.clear();
   p.end();
-  for (uint16_t i = 0; i < PARAM_COUNT; i++) {
-    *PARAMS[i].ptr = *PARAMS[i].ptr;   // 占位（默认值在复位后由各自模块宏重建）
-  }
-  /* 恢复编译初值：需要重新读宏——直接重新赋值（宏在头文件里，再次引用即可） */
+  /* 恢复编译初值：重新读宏（宏在头文件里，再次引用即可） */
   rate_p_roll=RATE_P_ROLL;  rate_i_roll=RATE_I_ROLL;  rate_d_roll=RATE_D_ROLL;
   rate_p_pitch=RATE_P_PITCH; rate_i_pitch=RATE_I_PITCH; rate_d_pitch=RATE_D_PITCH;
   rate_p_yaw=RATE_P_YAW;    rate_i_yaw=RATE_I_YAW;    rate_d_yaw=RATE_D_YAW;
