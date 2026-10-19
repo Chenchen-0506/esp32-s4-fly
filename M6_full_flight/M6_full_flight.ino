@@ -30,6 +30,7 @@
  *   BN-880 GPS  ：RX=16  TX=17（罗盘共用 I2C：SDA=8 SCL=9）
  *   iBus 接收机  ：RX=18（19200 8N1，FS-iA6B，无需反相）
  *   电机 PWM     ：M1=4  M2=5  M3=6  M4=7（50Hz，1000-2000µs）
+ *   数传 LINK   ：TX=14 RX=15（UART1，57600 8N1，模块可更换）
  *   电调 BEC 红线全挑出！全机 5V = 好盈 UBEC
  *
  * 遥控器通道（FlySky 默认）：

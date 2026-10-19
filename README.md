@@ -4,7 +4,7 @@
 
 ## 硬件（450mm X 型大机）
 
-> 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.14）
+> 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.21，含数传引脚与可更换说明）
 
 - 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART：BN-880 GPS / iBus：GPIO18（FS-iA6B 接收机））
 - 动力：2212 KV920 ×4 + 30A BLHeli 电调 ×4 + 1045 桨 + 4S 3000mAh
@@ -152,6 +152,7 @@ M6_full_flight/
   - `WP:CLEAR` 清空航线 / `WP:START` 开始 / `WP:STOP` 停止
   - `D` 回传最近 10 行黑匣子日志
 - **USB 同步输出**：同一份 JSON 也打到 `Serial`（115200），Type-C 连电脑后地面站用 **Web Serial** 直读，无需数传即可联调
+- **模块可更换**：数传接 UART1（GPIO14/15 + 5V/GND，57600），非焊死。任何 433MHz 数传（3DR / SDR X6 等）按上表接线即可替换，**无需改固件**；更换时注意 TX↔RX 交叉、GH1.25 线序防反接
 - **路线**：数传联调通过后，WiFi 仪表盘（TELEMETRY Web 服务）将删除，**只留数传**（用户已确认）
 - **网页记录与导出（分析通道，v0.20）**：地面站收到遥测自动记录（电脑端 Web Serial / 手机端共享均支持），飞行后点 **“导出数据(CSV)”** 生成 `S4Fly_flight_时间戳.csv`（含 vspd/spd，Excel 或脚本可直接分析）；**不再依赖机载完整日志下载**——黑匣子仅作机载兜底
 
