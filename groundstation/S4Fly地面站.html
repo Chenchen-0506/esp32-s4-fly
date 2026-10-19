@@ -36,6 +36,15 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .badge.armed{background:#16a34a;}
 .badge.rtl{background:#f59e0b;}
 .badge.pos{background:#7c3aed;}
+.badge.st{font-size:14px;padding:4px 12px;min-width:110px;text-align:center;}
+.badge.st-wait{background:#ca8a04;color:#000;}
+.badge.st-ready{background:#16a34a;color:#000;}
+.badge.st-danger{background:#dc2626;color:#fff;}
+.badge.st-mag{background:#7c3aed;color:#fff;}
+.badge.st-rtl{background:#f97316;color:#000;}
+.badge.st-wp{background:#2563eb;color:#fff;}
+.badge.st-pos{background:#0891b2;color:#fff;}
+.badge.st-glide{background:#991b1b;color:#fff;}
 
 /* ===== 主网格 ===== */
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;}
@@ -129,6 +138,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <button id="btnConn" class="btn" onclick="connToggle()">连接串口</button>
     <span id="linkDot" class="dot offline"></span><span id="linkTxt" style="font-size:12px;color:#94a3b8;">等待数据</span>
     <span id="armDot" class="dot offline"></span><span id="armTxt" style="font-size:12px;color:#94a3b8;">上锁</span>
+    <span id="stateBadge" class="badge st st-wait">--</span>
     <span id="modeBadge" class="badge">MANU</span>
     <button id="btnShare" class="btn off" onclick="toggleShare()">共享到手机</button>
     <span id="shareTxt" style="font-size:11px;color:#fbbf24;max-width:300px;"></span>
@@ -284,7 +294,7 @@ var DIRS=['N','NE','E','SE','S','SW','W','NW'];
 var $=function(id){return document.getElementById(id);};
 var connState=$('connState'), btnConn=$('btnConn'), baudSel=$('baud');
 var linkDot=$('linkDot'), linkTxt=$('linkTxt');
-var armDot=$('armDot'), armTxt=$('armTxt'), modeB=$('modeBadge');
+var armDot=$('armDot'), armTxt=$('armTxt'), modeB=$('modeBadge'), stateB=$('stateBadge');
 
 if(!navigator.serial){ $('tipNoSerial').style.display='block'; btnConn.disabled=true; }
 
@@ -401,6 +411,18 @@ function render(d){
   armTxt.textContent=d.armed?'解锁':'上锁';
   modeB.textContent=d.mode;
   modeB.className='badge'+(d.mode.indexOf('RTL')===0?' rtl':(d.mode==='POSHOLD'?' pos':(d.armed?'armed':'')));
+  // 中文组合状态（armed + mode + GPS）
+  var st={text:'--',cls:'st-wait'};
+  var m=(d.mode||'').trim();
+  if(m==='MAGCAL'){st={text:'磁校准中',cls:'st-mag'};}
+  else if(m.indexOf('RTL')===0){var sub={0:'爬升中',1:'直线返航',2:'下降降落',3:'已降落'}[Math.max(0,Math.min(3,parseInt((m.split('-')[1]||'0').replace('CLIMB','0').replace('FLY','1').replace('DESC','2').replace('LAND','3'),10)||0))]||'返航中';st={text:'返航中 '+sub,cls:'st-rtl'};}
+  else if(m.indexOf('WP-')===0){var wsub={0:'爬升',1:'飞向航点',2:'到点悬停'}[Math.max(0,Math.min(2,parseInt((m.split('-')[1]||'0').replace('CLIMB','0').replace('FLY','1').replace('ARRIV','2'),10)||0))]||'航点飞行';st={text:'航点飞行 '+wsub,cls:'st-wp'};}
+  else if(m==='GLIDE'){st={text:'失控缓降',cls:'st-glide'};}
+  else if(m==='POSHOLD'){st={text:'位置悬停',cls:'st-pos'};}
+  else if(!d.armed){st=(d.fix===1)?{text:'待起飞',cls:'st-ready'}:{text:'GPS搜索中 '+d.sats+'星',cls:'st-wait'};}
+  else if(d.fix!==1){st={text:'无GPS定位',cls:'st-danger'};}
+  else{st={text:'手动飞行',cls:'st-ready'};}
+  stateB.textContent=st.text; stateB.className='badge st '+st.cls;
   // 姿态
   var r=isFinite(d.roll)?d.roll:0, p=isFinite(d.pitch)?d.pitch:0;
   var pr=Math.max(-60,Math.min(60,-p*1.8));
