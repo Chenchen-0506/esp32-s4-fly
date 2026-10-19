@@ -11,7 +11,7 @@
  *   src/GPS.h/.cpp        BN-880 NMEA 解析（定位/卫星/经纬度）
  *   src/MAG.h/.cpp        BN-880 内置罗盘（航向读取）
  *   src/RTL.h/.cpp        返航状态机（手动/失控自动返航）
- *   src/SBUS.h/.cpp       iBus 遥控解析（GPIO44 19200 8N1，FS-iA6B；UART0，与 GPS 的 UART2 分离）
+ *   src/SBUS.h/.cpp       iBus 遥控解析（RMT 硬件解码，GPIO18 19200 8N1，FS-iA6B；不占用 UART）
  *   src/PID.h/.cpp        串级 PID 控制器（含内环参数）
  *   src/Motors.h/.cpp     4 路电调 PWM 输出
  * 主文件只保留：引脚/常量的应用层定义、setup、1kHz 控制环、解锁/上锁
@@ -28,7 +28,7 @@
  *   ICM-20948 SPI：SCK=12 MISO=13 MOSI=11 CS=10（3V3）
  *   BMP280 I2C  ：SDA=8  SCL=9
  *   BN-880 GPS  ：RX=16  TX=17（罗盘共用 I2C：SDA=8 SCL=9）
- *   iBus 接收机  ：RX=44（UART0，19200 8N1，FS-iA6B，无需反相；⚠ GPS 已占用 UART2(16/17)）
+ *   iBus 接收机  ：RX=18（RMT 硬件解码，19200 8N1，FS-iA6B，无需反相；不占用任何 UART）
  *   电机 PWM     ：M1=4  M2=5  M3=6  M4=7（50Hz，1000-2000µs）
  *   数传 LINK   ：TX=14 RX=15（UART1，57600 8N1，模块可更换）
  *   电调 BEC 红线全挑出！全机 5V = 好盈 UBEC
@@ -124,6 +124,7 @@ bool wp_pending = false;             // 航点请求（WiFi 网页置位，主�
 #define GLIDE_LAND_ALT_M    0.6f     // 视为触地的高度阈值（相对起飞点）
 #define GLIDE_TIMEOUT_MS    15000UL  // 缓降最长 15s，超时强制上锁（兜底）
 static bool     glide_landing = false; // 失控缓降进行中
+static bool     glide_force = false;   // 强制缓降（返航中丢星触发，遥控恢复也不退出，直到触地）
 static uint32_t glide_start_ms = 0;
 static WP_Output wp_out;             // 航点输出指令
 static RTL_Output rtl_out;              // 返航输出指令
@@ -170,7 +171,7 @@ void setup() {
 
   // ---- 遥控（iBus）初始化 ----
   sbus_begin();
-  Serial.println("[RC] iBus(FS-iA6B) GPIO44(UART0) 19200 8N1");
+  Serial.println("[RC] iBus(FS-iA6B) GPIO18 RMT 19200 8N1");
 
   // ---- BMP280 气压计 ----
   bmp_ok = bmp_begin();
@@ -363,8 +364,8 @@ void loop() {
       }
     }
   } else {
-    // —— 遥控恢复：退出失控缓降，恢复正常手动控制 ——
-    if (glide_landing && !rtl_active) {
+    // —— 遥控恢复：退出失控缓降，恢复正常手动控制（强制缓降不退出）——
+    if (glide_landing && !rtl_active && !glide_force) {
       glide_landing = false;
       Serial.println("[!] 遥控恢复，退出缓降（继续手动控制）");
     }
@@ -422,6 +423,7 @@ void loop() {
       if (!armed && millis() - arm_start_ms > 2000) {
         armed = true;
         arm_switching = false;
+        glide_force = false;   // 新一轮解锁前清除强制缓降标记
         Serial.println(">>> 已解锁 <<<");
         // 解锁瞬间重新记录地面气压 + 垂直融合归零（防气压漂移导致高度基准偏）
         if (bmp_ok) {
@@ -471,7 +473,20 @@ void loop() {
 
   // ---- 4.6 返航状态机推进（rtl_active 且已解锁时每环更新）----
   if (rtl_active && armed) {
-    rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, vertest_alt());
+    if (!gps_fix) {
+      // 返航中途 GPS 定位丢失：RTL 会拿冻结坐标继续推进，危险——
+      // 取消返航，转强制缓降上锁（v0.25.1，用户已确认该兜底策略）
+      rtl_active = false;
+      rtl_reset();
+      if (!glide_landing) {
+        glide_landing = true;
+        glide_force = true;        // 遥控恢复也不退出，直接缓降到触地
+        glide_start_ms = millis();
+      }
+      Serial.println("[!] 返航中 GPS 定位丢失 → 强制缓降上锁（安全兜底）");
+    } else {
+      rtl_out = rtl_update(armed, rc_lost, gps_lat, gps_lon, mag_heading, vertest_alt());
+    }
   }
 
   // ---- 4.7 航点飞行推进（网页请求 + 已解锁 + 定位 + 无返航/无失控）----
@@ -627,6 +642,7 @@ void loop() {
       if (landed) {
         armed = false;
         glide_landing = false;
+        glide_force = false;
         rtl_active = false;
         rtl_reset();
         wp_pending = false;

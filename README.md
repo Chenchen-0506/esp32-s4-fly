@@ -6,7 +6,7 @@
 
 > 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.22，含数传引脚与可更换说明、磁偏角自动识别）
 
-- 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART2：BN-880 GPS / iBus：GPIO44（FS-iA6B 接收机，UART0，与 GPS 分离））
+- 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART2：BN-880 GPS / iBus：GPIO18（FS-iA6B 接收机，RMT 硬件解码，不占用 UART））
 - 动力：2212 KV920 ×4 + 30A BLHeli 电调 ×4 + 1045 桨 + 4S 3000mAh
 - 传感器：ICM-20948 九轴（SPI）+ BMP280 气压计（I2C）+ BN-880 GPS/罗盘（UART+I2C）
 - 遥控：FlySky FS-i6 + FS-iA6B 接收机（iBus 19200）：CH5 解锁开关、CH6 返航开关
@@ -62,7 +62,7 @@ M6_full_flight/
 | 感知 | 磁罗盘自动校准（30s 自动完成） | v0.7 |
 | 感知 | 磁偏角自动识别（NOAA WMM 全球查表，GPS 定位后自动修正） | v0.21 |
 | 感知 | 垂直融合 VERTEST（气压+加速度） | v0.10 |
-| 遥控 | FS-iA6B iBus 解析（GPIO44 19200，UART0） | v0.13 |
+| 遥控 | FS-iA6B iBus 解析（GPIO18 19200，RMT 硬件解码，不占用 UART） | v0.13 |
 | 遥控 | 6 通道映射 + 死区（CH1-4 杆量/CH5 解锁/CH6 返航+校准） | v0.1 |
 | 控制 | 串级 PID（角速度内环+角度外环） | v0.1 |
 | 控制 | X 型混控（M1-4 对角同向，50Hz 14bit） | v0.1 |
@@ -85,7 +85,7 @@ M6_full_flight/
 | 数据 | 磁校准完成标志（遥测 `magCal`，NVS 持久化） | v0.22 |
 | 数据 | 地面站起飞检查清单（GPS/星数/HOME/磁校准/信号，全绿提示可起飞）+ 声音报警（失控缓降/断连/数据超时蜂鸣） | v0.22 |
 | 控制 | 参数在线调整（PARAM:SET/GET/RESET，30 项：PID/定高/返航/油门，立即生效+NVS 持久化，地面站面板操作） | v0.23 |
-| 工程 | 自检修复 v0.25（iBus 移 UART0 防串口冲突 / 数传发送缓冲防阻塞 1kHz 环 / 航点高度解析 / RTL 巡航参数统一 / LOGGER 落盘策略） | v0.25 |
+| 工程 | 自检修复 v0.25~v0.25.1（iBus 改 RMT 解码防串口冲突 / 数传发送缓冲防阻塞 1kHz 环 / 航点高度解析 / RTL 巡航参数统一 / LOGGER 落盘策略 / 返航丢星强制缓降 / 地面站调参按钮修复） | v0.25 |
 | 工具 | 电调校准 M4_esc_test（四路同时校准/测试） | v0.13 |
 | 工程 | 模块化 src/（15 功能模块 + WMM 查表）+ GitHub 开源（30 个版本标签回档）；地面站中文状态徽章 / CH5/6 功能显示 / 日志窗常驻 | v0.1~v0.21.6 |
 
@@ -389,7 +389,8 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.24-gs-params-zh`：地面站删 M1~M4 电机卡、参数面板全宽多列、中文参数名
   - `v0.24.1-gs-autoget`：连接后自动 PARAM:GET
   - `v0.24.2-gs-logfix`：修复删电机卡时误删 grid 闭合 div 导致日志窗压缩回归
-  - `v0.25-selfcheck-fix`：全链路自检修复（iBus→UART0 GPIO44 防与 GPS 串口冲突 / LINK 发送缓冲防阻塞 1kHz 环 / WP:ADD 高度解析 bug / RTL 巡航段参数统一 / LOGGER 飞行中不落盘 + 环形覆盖修正 / 死代码清理）
+  - `v0.25-selfcheck-fix`：全链路自检修复（数传发送缓冲防阻塞 1kHz 环 / WP:ADD 高度解析 bug / RTL 巡航段参数统一 / LOGGER 飞行中不落盘 + 环形覆盖修正 / 死代码清理）
+  - `v0.25.1-rmt-failsafe`：iBus 改 RMT 硬件解码（GPIO18 不变、不占用 UART；废弃 v0.25 的 UART0/GPIO44 方案——UART0 已被板载 USB 串口占用）+ 返航中途 GPS 丢星→强制缓降上锁 + 地面站调参面板「应用」按钮布局修复（右对齐换行、去重复 CSS、列宽 260px）
 - 注：v0.2/v0.3 未单独打 tag（并入 v0.4-M7 前后历史提交）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述
