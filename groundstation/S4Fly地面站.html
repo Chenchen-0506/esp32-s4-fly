@@ -276,7 +276,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
   <button class="btn green" onclick="exportData()">导出数据(CSV)</button>
   <button class="btn off" onclick="clearData()">清空记录</button>
 </div>
-<div id="log"></div>
+<div id="log" style="display:block;"><span class="rowline">等待数据：连接串口后这里实时显示原始遥测 JSON（10Hz）</span></div>
 
 </div>
 
@@ -629,12 +629,13 @@ window.wpCmd=function(kind){
 window.logReq=function(){ if(!connected){ alert('请先连接串口'); return; } sendLine('D'); };
 
 /* ================= 日志 ================= */
-var logOn=false, paused=false, all=[];
+var logOn=true, paused=false, all=[];
 window.toggleLog=function(){
   logOn=!logOn;
   $('log').style.display=logOn?'block':'none';
   $('btnLog').textContent=logOn?'隐藏原始数据':'显示原始数据';
   $('btnLog').className=logOn?'btn':'btn off';
+  if(logOn) $('btnLog').className='btn';
 };
 window.togglePause=function(){ paused=!paused; $('btnPause').textContent=paused?'继续':'暂停'; };
 /* 导出飞行数据为 CSV（数传网页记录，飞行后打包分析） */
