@@ -225,8 +225,12 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
 
 | # | 计划项 | 内容 | 状态 |
 |---|--------|------|------|
-| 1 | 433MHz 数传 + HTML 地面站 | 已落地：LINK 模块（UART1 57600）10Hz JSON 上行 + WP:ADD/CLEAR/START/STOP/D 命令下行；USB 同路输出（Web Serial 可读）；地面站地图（高德+Esri）与航点控制已就绪；vspd/spd 字段待补 | 已实现（v0.18） |
+| 1 | 433MHz 数传 + HTML 地面站 | 已落地：LINK 模块（UART1 57600）10Hz JSON 上行 + WP:ADD/CLEAR/START/STOP/D 命令下行；USB 同路输出（Web Serial 可读）；地面站地图（高德+Esri）、航点控制、网页记录 + CSV 导出（含 vspd/spd）均已就绪 | 已实现（v0.19~v0.20） |
 | 2 | 图传 + 地面接收 | 5.8G 图传（模拟或数字）；地面用手机/FPV 眼镜查看实时画面；飞行数据叠加（OSD）可选 | 计划中 |
 | 3 | 定高/悬停触发方案 | FS-iA6B 仅 6 通道、无物理 CH7：定高/悬停（ALTHOLD/POSHOLD）暂不可开关触发，待定替代方案（如解锁后油门中位保持等） | 待定 |
 
 > 数传链路：飞控 UART1 → 机载数传(433MHz) → 地面数传 USB → 电脑 Chrome → 网页地面站，范围 1~3km 视距。WiFi 看板为过渡方案，数传联调通过后删除，只留数传。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)：可自由使用、修改、分发与商用，需保留原版权声明。固件（src/ 与 .ino）、地面站网页、3D 打印件（STL）与文档均按本许可证开源。
