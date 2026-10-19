@@ -713,6 +713,8 @@ void loop() {
     tel_status.home_lon   = rtl_home_valid() ? rtl_home_lon() : 0.0f;
     tel_status.hdg        = mag_ok ? mag_heading : -1.0f;
     tel_status.mag_decl   = mag_decl;
+    tel_status.rssi_pct   = sbus_signal_pct();
+    tel_status.mag_cal    = mag_cal_done() ? 1 : 0;
     tel_status.wp_dist    = wp_pending ? wp_out.dist : -1.0f;
     for (int i = 0; i < 4; i++) tel_status.mot[i] = motor_us[i];
 

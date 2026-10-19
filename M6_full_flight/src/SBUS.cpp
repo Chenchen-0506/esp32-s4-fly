@@ -16,6 +16,11 @@ uint16_t rc_ch[16] = {1500, 1500, 1000, 1500, 1500, 1500, 1500, 1500,
 bool     rc_failsafe = false;
 
 static uint32_t rc_last_frame_ms = 0;
+/* 信号质量：最近 1 秒实际 iBus 帧数 / 期望帧数（约 130 帧/s，7.7ms 周期） */
+#define SBUS_EXPECT_FPS  130
+static uint32_t rc_frames_sec = 0;
+static uint32_t rc_sec_anchor = 0;
+static uint8_t  rc_sig = 100;
 
 void sbus_begin() {
   // iBus：19200 波特、8N1、RX=GPIO18（无需反相）
@@ -48,11 +53,23 @@ void sbus_poll() {
     buf[idx++] = b;
     if (idx >= SBUS_FRAME_LEN) {
       idx = 0;
-      if (sbus_parse(buf)) rc_last_frame_ms = millis();
+      if (sbus_parse(buf)) { rc_last_frame_ms = millis(); rc_frames_sec++; }
     }
   }
 }
 
 bool sbus_get_lost() {
   return (millis() - rc_last_frame_ms > 1000);
+}
+
+uint8_t sbus_signal_pct() {
+  uint32_t now = millis();
+  if (now - rc_sec_anchor >= 1000UL) {
+    uint32_t got = rc_frames_sec * 100 / SBUS_EXPECT_FPS;
+    if (got > 100) got = 100;
+    rc_sig = (uint8_t)((rc_sig * 7 + got * 3) / 10);   // 平滑，防抖
+    rc_frames_sec = 0;
+    rc_sec_anchor = now;
+  }
+  return rc_sig;
 }

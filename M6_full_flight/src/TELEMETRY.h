@@ -32,6 +32,8 @@ typedef struct {
   float    vspd;         // 垂直速度 m/s（+上升，垂直融合）
   float    spd;          // 水平地速 m/s（GPS 位置差分）
   uint16_t rc[7];        // 通道 1~7
+  uint8_t  rssi_pct;     // 遥控信号质量 0~100（iBus 帧接收率）
+  uint8_t  mag_cal;      // 罗盘磁校准已完成 0/1（NVS 持久化）
   uint8_t  gps_fix;      // 0/1
   uint8_t  gps_sats;
   float    gps_lat;

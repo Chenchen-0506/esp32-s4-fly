@@ -405,6 +405,8 @@ String tel_build_json() {
   j = "{\"t\":"; j += (uint32_t)millis();
   j += ",\"armed\":"; j += tel_status.armed;
   j += ",\"mode\":\""; j += tel_status.mode; j += "\"";
+  j += ",\"rssi\":"; j += tel_status.rssi_pct;
+  j += ",\"magCal\":"; j += tel_status.mag_cal;
   j += ",\"roll\":"; j += String(tel_status.roll, 1);
   j += ",\"pitch\":"; j += String(tel_status.pitch, 1);
   j += ",\"yaw\":"; j += String(tel_status.yaw, 1);

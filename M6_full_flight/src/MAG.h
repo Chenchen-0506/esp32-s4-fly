@@ -31,6 +31,7 @@ extern float mag_y_off;
 
 // 运行时磁偏角（真北修正，度）：GPS 定位后自动更新，mag_read 使用
 extern float mag_decl;
+extern bool  mag_calibrated;   // 已做过磁校准（NVS 持久化）
 
 void mag_load_cal();                  // 开机：从 NVS 加载校准值 + 磁偏角
 void mag_cal_start();                 // 开始校准采样（清空极值）
@@ -41,5 +42,6 @@ float mag_auto_decl(float lat, float lon);   // 查表计算磁偏角（度，-9
 void mag_auto_update(float lat, float lon);  // GPS fix 后周期调用：自动更新并持久化
 
 bool mag_begin();
+bool mag_cal_done(void);   // 返回是否已校准
 
 #endif

@@ -32,6 +32,7 @@ float mag_y_off = 0.0f;
 
 // 运行时磁偏角（GPS 定位后自动更新；NVS 持久化）
 float mag_decl = MAG_DECL;
+bool  mag_calibrated = false;
 
 // ---- 校准采样状态 ----
 static bool     cal_active = false;
@@ -39,6 +40,8 @@ static uint32_t cal_start_ms = 0;
 static bool     cal_init = false;
 static int16_t  cal_minx = 0, cal_maxx = 0;
 static int16_t  cal_miny = 0, cal_maxy = 0;
+
+bool mag_cal_done() { return mag_calibrated; }
 
 bool mag_begin() {
   // Wire 已由主程序 setup 统一初始化（Wire.begin(8,9)），此处不再重复调用
@@ -105,6 +108,7 @@ void mag_load_cal() {
   mag_x_off = p.getFloat("xoff", 0.0f);
   mag_y_off = p.getFloat("yoff", 0.0f);
   mag_decl  = p.getFloat("decl", MAG_DECL);
+  mag_calibrated = (p.getUChar("caldone", 0) == 1);
   p.end();
 }
 
@@ -113,6 +117,7 @@ static void mag_save_cal() {
   p.begin("mag", false);                 // 可写打开
   p.putFloat("xoff", mag_x_off);
   p.putFloat("yoff", mag_y_off);
+  p.putUChar("caldone", 1);   // 校准完成标志（供地面站检查清单）
   p.end();
 }
 
@@ -157,6 +162,7 @@ void mag_cal_finish() {
     mag_y_off = -((float)cal_maxy + cal_miny) / 2.0f;
   }
   mag_save_cal();
+  mag_calibrated = true;
   cal_active = false;
 }
 

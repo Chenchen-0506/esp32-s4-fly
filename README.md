@@ -52,7 +52,7 @@ M6_full_flight/
     └── MAG_DECL_TABLE.h      # 磁偏角全球查表（NOAA WMM，10° 网格）
 ```
 
-## 功能总览（v0.21.6）
+## 功能总览（v0.22）
 
 | 类别 | 功能 | 版本 |
 |---|---|---|
@@ -81,10 +81,19 @@ M6_full_flight/
 | 数据 | WiFi 实时仪表盘（热点 S4Fly-Telemetry，姿态球/高度/航向/GPS/通道/电机；过渡方案，数传稳定后删） | v0.13 |
 | 数据 | 433MHz 数传链路 LINK（10Hz 遥测上行 + WP/D 命令下行，USB 同路输出） | v0.19 |
 | 数据 | 数传网页记录 + CSV 导出（25 列含磁偏角 magDecl，电脑/手机地面站） | v0.20~v0.21.6 |
+| 数据 | 遥控信号质量 RSSI（iBus 帧接收率 0~100%，遥测 `rssi`，信号条显示+弱信号预警） | v0.22 |
+| 数据 | 磁校准完成标志（遥测 `magCal`，NVS 持久化） | v0.22 |
+| 数据 | 地面站起飞检查清单（GPS/星数/HOME/磁校准/信号，全绿提示可起飞）+ 声音报警（失控缓降/断连/数据超时蜂鸣） | v0.22 |
 | 工具 | 电调校准 M4_esc_test（四路同时校准/测试） | v0.13 |
 | 工程 | 模块化 src/（15 功能模块 + WMM 查表）+ GitHub 开源（30 个版本标签回档）；地面站中文状态徽章 / CH5/6 功能显示 / 日志窗常驻 | v0.1~v0.21.6 |
 
 ### 功能明细（由下而上按模块说明）
+
+### 遥控信号质量（RSSI，v0.22）
+
+- iBus 协议本身不含 RSSI 字段，采用**帧接收率**作为信号质量：最近 1 秒实际收到帧数 / 期望帧数（约 130 帧/s），0~100%
+- 7:3 平滑防抖；无帧即失控（>1s）时质量归 0，与失控缓降/返航联动
+- 地面站遥控通道卡显示**信号条**（≥70 绿 / 40~70 黄 / <40 红），弱信号会在地面站声音报警中提醒
 
 ### 解锁 / 上锁（CH5 开关）
 
@@ -107,6 +116,13 @@ M6_full_flight/
   - 高度保持：定高 PID（悬停油门自动学习，10 秒持久化到 NVS，下次开机自动加载）
   - 位置保持：位置误差→倾角（死区 1.5m 压制 GPS 噪声，限幅 15°），摇杆=移动悬停目标点
 - **CH7 拨低**：退出，恢复纯手动
+
+### 起飞检查清单（v0.22）
+
+- 地面站「起飞检查清单」卡逐项实时核对：**GPS 定位 / 卫星数量（≥8）/ HOME 记录 / 磁校准完成 / 遥控信号（≥70%）**
+- 全部通过显示「可以起飞」，否则给出具体拦阻项（如 GPS 未定位=禁止起飞、磁校准未做=提示 CH6 拨高 3 秒）
+- 磁校准完成标志（`magCal`）由固件 NVS 持久化：做过一次即长期有效，掉电不丢
+- **声音报警**（Web Audio，可关闭）：失控缓降急促蜂鸣、连接断开提示音、数据超时提醒、磁校准完成确认音
 
 ### 磁校准（返航前必须，全自动）
 
@@ -154,7 +170,7 @@ M6_full_flight/
 
 - **接线**（机载）：主控 `GPIO14(TX)` → 机载数传模块 RX；主控 `GPIO15(RX)` ← 机载数传模块 TX；数传 5V/GND 供电（与分电板 UBEC 同源）
 - **波特率**：`57600` 8N1（UART1，引脚宏在 `src/LINK.h`，与地面端默认一致）
-- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/vspd/spd/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/magDecl/wp/wpIndex/wpTotal/wpList[8]/mot[4]`，vspd=垂直速度 m/s、spd=水平地速 m/s GPS 差分、magDecl=当前磁偏角 deg）
+- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/rssi/magCal/roll/pitch/yaw/alt/vspd/spd/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/magDecl/wp/wpIndex/wpTotal/wpList[8]/mot[4]`，vspd=垂直速度 m/s、spd=水平地速 m/s GPS 差分、magDecl=当前磁偏角 deg）
 - **下行命令**：地面站发一行即可
   - `WP:ADD,lat,lon,alt` 添加航点（alt 省略默认 30m）
   - `WP:CLEAR` 清空航线 / `WP:START` 开始 / `WP:STOP` 停止
@@ -352,6 +368,9 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.21.4-gs-log-window`：地面站日志窗默认展开 + 占位提示
   - `v0.21.5-gs-clean-topbar`：删除顶栏重复串口连接状态文字，连接失败信息并入链路指示
   - `v0.21.6-gs-csv-magdecl`：CSV 导出补 magDecl 列（25 列），地面站功能逻辑自检通过
+  - `v0.21.7-readme-tutorial`：README 新增快速开始（安装教程）+ 地面站使用教程（连接/界面/状态徽章/航点/共享/CSV/FAQ）
+  - `v0.21.8-gs-replay`：地面站飞行轨迹回放（CSV 导入→地图回放，速度/进度/参数面板）
+  - `v0.22-rssi-checklist-alarm`：遥控信号质量（帧接收率）+ 磁校准标志遥测 + 地面站起飞检查清单与声音报警
 - 注：v0.2/v0.3 未单独打 tag（并入 v0.4-M7 前后历史提交）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述

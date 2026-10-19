@@ -108,6 +108,17 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 
 /* ===== 日志 ===== */
 
+
+.rssirow{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:#94a3b8;}
+#rssiBar{flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;min-width:40px;}
+#rssiFill{display:block;height:100%;width:0;background:#22c55e;border-radius:4px;transition:width .3s;}
+.chklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;}
+.chk{padding:8px 10px;border-radius:8px;font-size:12px;background:#0f172a;border:1px solid #1f2c3d;color:#94a3b8;}
+.chk-ok{border-color:#22c55e;color:#4ade80;}
+.chk-warn{border-color:#f59e0b;color:#fbbf24;}
+.chk-no{border-color:#ef4444;color:#f87171;}
+.chkverdict{margin-top:8px;font-size:14px;font-weight:700;color:#94a3b8;}
+.verdict-ok{color:#4ade80;}.verdict-warn{color:#fbbf24;}.verdict-no{color:#f87171;}
 .rpbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
 .rpbar .btn{min-width:70px;}
 .rpspd{display:flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;}
@@ -249,6 +260,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <h3>遥控通道 CH1~CH7（CH5/CH6 功能）</h3>
     <div class="rchint"><b>CH5</b> 油门最低 + 拨高2秒解锁 / 拨低上锁　<b>CH6</b> 未解锁拨高3秒磁校准 / 解锁拨高手动返航</div>
     <div id="rcRows"></div>
+    <div class="rssirow">信号 <b id="vRssi">--</b><span id="rssiBar"><i id="rssiFill"></i></span><span id="vRssiTxt">--</span></div>
   </div>
 
   <!-- 航点 -->
@@ -293,7 +305,22 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="rppars" id="rpPars">--</div>
   </div>
 
+
+  <!-- 起飞检查清单 -->
+  <div class="card c-12">
+    <h3>起飞检查清单（飞行前逐项确认）</h3>
+    <div class="chklist" id="chkList">
+      <div class="chk" id="chkGps">GPS 定位：--</div>
+      <div class="chk" id="chkSats">卫星数量：--</div>
+      <div class="chk" id="chkHome">HOME 记录：--</div>
+      <div class="chk" id="chkMag">磁校准：--</div>
+      <div class="chk" id="chkRssi">遥控信号：--</div>
+    </div>
+    <div class="chkverdict" id="chkVerdict">未连接</div>
+  </div>
+
   <!-- 电机 -->
+
   <!-- 电机 -->
   <div class="card c-12">
     <h3>电机油门 M1~M4</h3>
@@ -306,6 +333,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
   <button id="btnPause" class="btn off" onclick="togglePause()">暂停</button>
   <button class="btn green" onclick="exportData()">导出数据(CSV)</button>
   <button class="btn off" onclick="clearData()">清空记录</button>
+  <button class="btn" id="btnSound" onclick="toggleSound()">声音:开</button>
 </div>
 <div id="log" style="display:block;"><span class="rowline">等待数据：连接串口后这里实时显示原始遥测 JSON（10Hz）</span></div>
 
@@ -442,6 +470,7 @@ function haversine(lat1,lon1,lat2,lon2){
 }
 
 function render(d){
+  chkUpdate(d);
   // 解锁/模式
   armDot.className='dot '+(d.armed?'on':'offline');
   armTxt.textContent=d.armed?'解锁':'上锁';
@@ -702,6 +731,7 @@ window.clearData=function(){
 
 /* 串口数据新鲜度监控（掉线提醒） */
 setInterval(function(){
+  alertCheck();
   if(connected){
     dataAge++;
     if(dataAge>20){ linkDot.className='dot link'; linkTxt.textContent='数据超时('+dataAge+'s)'; }
@@ -709,6 +739,85 @@ setInterval(function(){
   }
 },1000);
 
+
+
+/* ================= 起飞检查清单 + 信号 + 声音报警 ================= */
+function chkSet(id, cls, txt){ var e=$(id); e.className='chk '+cls; e.textContent=txt; }
+function chkUpdate(d){
+  if(!d){
+    chkSet('chkGps','chk-no','GPS 定位：--');
+    chkSet('chkSats','chk-no','卫星数量：--');
+    chkSet('chkHome','chk-no','HOME 记录：--');
+    chkSet('chkMag','chk-no','磁校准：--');
+    chkSet('chkRssi','chk-no','遥控信号：--');
+    var v=$('chkVerdict'); v.className='chkverdict'; v.textContent='未连接';
+    return;
+  }
+  var okGps=d.fix===1, sats=d.sats||0;
+  var okSats=okGps&&sats>=8, warnSats=okGps&&sats>=5;
+  var okHome=d.home===1;
+  var okMag=d.magCal===1;
+  var rssi=(typeof d.rssi==='number'&&isFinite(d.rssi))?d.rssi:100;
+  var okRssi=rssi>=70, warnRssi=rssi>=40;
+  chkSet('chkGps', okGps?'chk-ok':'chk-no', 'GPS 定位：'+(okGps?'已定位':'未定位'));
+  chkSet('chkSats', okSats?'chk-ok':(warnSats?'chk-warn':'chk-no'), '卫星数量：'+sats+' 星（≥8）');
+  chkSet('chkHome', okHome?'chk-ok':'chk-no', 'HOME 记录：'+(okHome?'已记录':'未记录'));
+  chkSet('chkMag', okMag?'chk-ok':'chk-no', '磁校准：'+(okMag?'已完成':'未校准'));
+  chkSet('chkRssi', okRssi?'chk-ok':(warnRssi?'chk-warn':'chk-no'), '遥控信号：'+rssi+'%'+(okRssi?'（良好）':(warnRssi?'（较弱）':'（差）')));
+  // 信号条
+  $('vRssi').textContent=rssi;
+  var fill=$('rssiFill');
+  fill.style.width=rssi+'%';
+  fill.style.background=rssi>=70?'#22c55e':(rssi>=40?'#f59e0b':'#ef4444');
+  $('vRssiTxt').textContent=rssi>=70?'良好':(rssi>=40?'较弱':'差');
+  var v=$('chkVerdict');
+  if(d.armed){ v.className='chkverdict verdict-warn'; v.textContent='已解锁 · 飞行中（清单起飞前确认）'; }
+  else if(okGps&&okSats&&okHome&&okMag&&okRssi){ v.className='chkverdict verdict-ok'; v.textContent='✅ 可以起飞'; }
+  else if(!okGps){ v.className='chkverdict verdict-no'; v.textContent='⛔ 禁止起飞：GPS 未定位'; }
+  else if(!okMag){ v.className='chkverdict verdict-warn'; v.textContent='⚠ 建议先磁校准（CH6 拨高 3 秒）'; }
+  else if(!okHome){ v.className='chkverdict verdict-warn'; v.textContent='⚠ HOME 未记录（起飞后 GPS 连续 1 分钟）'; }
+  else { v.className='chkverdict verdict-warn'; v.textContent='⚠ 未完全就绪'; }
+}
+/* 声音报警（Web Audio 蜂鸣） */
+var sndOn=true, actx=null;
+function beep(f,dur,cnt,iv){
+  if(!sndOn) return;
+  try{
+    if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+    var n=0;
+    (function tick(){
+      if(n>=cnt) return;
+      var o=actx.createOscillator(), g=actx.createGain();
+      o.type='square'; o.frequency.value=f;
+      o.connect(g); g.connect(actx.destination);
+      var t0=actx.currentTime;
+      g.gain.setValueAtTime(0.12,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dur/1000);
+      o.start(t0); o.stop(t0+dur/1000+0.02);
+      n++; setTimeout(tick,iv);
+    })();
+  }catch(e){}
+}
+window.toggleSound=function(){
+  sndOn=!sndOn;
+  $('btnSound').textContent='声音:'+(sndOn?'开':'关');
+  $('btnSound').className=sndOn?'btn':'btn off';
+};
+/* 报警状态机（复用 1s 新鲜度定时器，模式变化/断连/超时触发） */
+var alLastMode='', alWarned=false, alConn=false, alGlide=false, alMagcal=false;
+function alertCheck(){
+  var mode='';
+  try{ var j=JSON.parse(lastJsonStr||'{}'); mode=(j.mode||'').trim(); }catch(e){}
+  if(mode!==alLastMode){
+    if(alLastMode==='MAGCAL'&&mode!=='MAGCAL'&&mode!=='') beep(660,150,2,220);   // 磁校准完成
+    if(mode==='GLIDE') beep(880,150,5,220);                                       // 失控缓降
+    alLastMode=mode;
+  }
+  if(connected&&!alConn){ alConn=true; }
+  if(!connected&&alConn){ beep(220,300,1,0); alConn=false; }                      // 断连
+  if(connected&&dataAge===21&&!alWarned){ beep(440,200,2,250); alWarned=true; }   // 数据超时
+  if(connected&&dataAge<20) alWarned=false;
+}
 
 /* ================= 飞行轨迹回放（CSV 导入） ================= */
 var rpRows=[], rpIdx=0, rpTimer=null, rpSpeed=1, rpPoly=null, rpDoneLine=null, rpDrone=null, rpHomes=null;

@@ -26,5 +26,6 @@ void sbus_begin();
 void sbus_poll();
 bool sbus_get_lost();
 bool sbus_parse(const uint8_t *b);
+uint8_t sbus_signal_pct(void);   // 信号质量 0~100（帧接收率）
 
 #endif
