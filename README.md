@@ -50,7 +50,7 @@ M6_full_flight/
     ├── LINK.h/.cpp         # 433MHz 数传链路（UART1：10Hz 遥测上行 + WP/D 命令下行）
 ```
 
-## 功能总览（v0.20.1）
+## 功能总览（v0.21）
 
 | 类别 | 功能 | 版本 |
 |---|---|---|
@@ -58,6 +58,7 @@ M6_full_flight/
 | 感知 | BMP280 气压高度（I2C） | v0.3 |
 | 感知 | BN-880 GPS + 内置罗盘（UART） | v0.2 |
 | 感知 | 磁罗盘自动校准（30s 自动完成） | v0.7 |
+| 感知 | 磁偏角自动识别（NOAA WMM 全球查表，GPS 定位后自动修正） | v0.21 |
 | 感知 | 垂直融合 VERTEST（气压+加速度） | v0.10 |
 | 遥控 | FS-iA6B iBus 解析（GPIO18 19200） | v0.13 |
 | 遥控 | 6 通道映射 + 死区（CH1-4 杆量/CH5 解锁/CH6 返航+校准） | v0.1 |
@@ -150,7 +151,7 @@ M6_full_flight/
 
 - **接线**（机载）：主控 `GPIO14(TX)` → 机载数传模块 RX；主控 `GPIO15(RX)` ← 机载数传模块 TX；数传 5V/GND 供电（与分电板 UBEC 同源）
 - **波特率**：`57600` 8N1（UART1，引脚宏在 `src/LINK.h`，与地面端默认一致）
-- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/vspd/spd/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/wp/wpIndex/wpTotal/wpList[8]/mot[4]`，vspd=垂直速度 m/s、spd=水平地速 m/s GPS 差分）
+- **上行遥测**：10Hz 输出 JSON 行，字段与 `/api` 完全一致（`t/armed/mode/roll/pitch/yaw/alt/vspd/spd/rc[7]/fix/sats/lat/lon/home/homeLat/homeLon/hdg/magDecl/wp/wpIndex/wpTotal/wpList[8]/mot[4]`，vspd=垂直速度 m/s、spd=水平地速 m/s GPS 差分、magDecl=当前磁偏角 deg）
 - **下行命令**：地面站发一行即可
   - `WP:ADD,lat,lon,alt` 添加航点（alt 省略默认 30m）
   - `WP:CLEAR` 清空航线 / `WP:START` 开始 / `WP:STOP` 停止
@@ -213,6 +214,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.11-blackbox-wifi`：黑匣子（LOGGER）+ WiFi 看板（TELEMETRY）
   - `v0.12-selfcheck-fix`：代码自检修复（加速度量程 bug / 失控降落保护 / 解锁重定高 / 磁校准节流）
   - `v0.13-ibus-dashboard`：遥控接收 SBUS→iBus（FS-iA6B 适配）；WiFi 看板升级为仪表盘（/api JSON，姿态球/高度/航向/GPS/RC/电机）
+  - `v0.21-mag-auto-decl`：磁偏角自动识别（NOAA WMM 全球查表 + 双线性内插，GPS 定位后自动更新并持久化）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述
 

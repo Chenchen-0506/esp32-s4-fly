@@ -421,6 +421,7 @@ String tel_build_json() {
   j += ",\"homeLat\":"; j += String(tel_status.home_lat, 5);
   j += ",\"homeLon\":"; j += String(tel_status.home_lon, 5);
   j += ",\"hdg\":"; j += String(tel_status.hdg, 1);
+  j += ",\"magDecl\":"; j += String(tel_status.mag_decl, 2);
   j += ",\"wp\":"; j += String(tel_status.wp_dist, 1);
   j += ",\"wpIndex\":"; j += wp_index_now();
   j += ",\"wpTotal\":"; j += wp_count_now();

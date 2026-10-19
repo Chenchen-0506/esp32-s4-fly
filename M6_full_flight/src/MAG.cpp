@@ -1,9 +1,11 @@
 /*
  * ============================================================================
  * 罗盘功能模块实现 —— QMC5883L / HMC5883 自动识别 + 自动磁校准（NVS 持久化）
+ *                 + 磁偏角自动识别（NOAA WMM 全球查表）
  * ============================================================================
  */
 #include "MAG.h"
+#include "MAG_DECL_TABLE.h"
 #include <Wire.h>
 #include <Preferences.h>
 
@@ -16,12 +18,20 @@
 
 #define MAG_CAL_TIMEOUT_MS  30000UL   // 校准采样时长（30 秒）
 
+// 磁偏角自动更新节流（GPS fix 后每 10s 查一次表）
+#define MAG_DECL_UPDATE_MS  10000UL
+// 磁偏角变化超过该值（度）才写 NVS（避免频繁写 flash）
+#define MAG_DECL_SAVE_DELTA 0.2f
+
 static uint8_t mag_addr = 0;       // 检测到的地址（0=未找到）
 static bool    mag_is_hmc = false; // true=HMC5883, false=QMC5883L
 
 // 运行时偏移（校准结果，NVS 持久化）
 float mag_x_off = 0.0f;
 float mag_y_off = 0.0f;
+
+// 运行时磁偏角（GPS 定位后自动更新；NVS 持久化）
+float mag_decl = MAG_DECL;
 
 // ---- 校准采样状态 ----
 static bool     cal_active = false;
@@ -94,6 +104,7 @@ void mag_load_cal() {
   p.begin("mag", true);                  // 只读打开
   mag_x_off = p.getFloat("xoff", 0.0f);
   mag_y_off = p.getFloat("yoff", 0.0f);
+  mag_decl  = p.getFloat("decl", MAG_DECL);
   p.end();
 }
 
@@ -102,6 +113,13 @@ static void mag_save_cal() {
   p.begin("mag", false);                 // 可写打开
   p.putFloat("xoff", mag_x_off);
   p.putFloat("yoff", mag_y_off);
+  p.end();
+}
+
+static void mag_save_decl() {
+  Preferences p;
+  p.begin("mag", false);
+  p.putFloat("decl", mag_decl);
   p.end();
 }
 
@@ -142,13 +160,54 @@ void mag_cal_finish() {
   cal_active = false;
 }
 
+/* ---- 磁偏角自动识别（NOAA WMM 全球查表 + 双线性内插）---- */
+float mag_auto_decl(float lat, float lon) {
+  if (lat < -90.0f) lat = -90.0f;
+  if (lat >  90.0f) lat =  90.0f;
+  if (lon < -180.0f) lon = -180.0f;
+  if (lon >  180.0f) lon =  180.0f;
+
+  float fi = (lat + 90.0f) / 10.0f;      // 行索引（0..18）
+  float fj = (lon + 180.0f) / 10.0f;     // 列索引（0..36）
+  int i0 = (int)fi; if (i0 > 17) i0 = 17;
+  int j0 = (int)fj; if (j0 > 35) j0 = 35;
+  float di = fi - (float)i0;
+  float dj = fj - (float)j0;
+
+  float v00 = (float)mag_decl_table[i0][j0];
+  float v10 = (float)mag_decl_table[i0 + 1][j0];
+  float v01 = (float)mag_decl_table[i0][j0 + 1];
+  float v11 = (float)mag_decl_table[i0 + 1][j0 + 1];
+
+  float a = (1.0f - di) * v00 + di * v10;
+  float b = (1.0f - di) * v01 + di * v11;
+  return ((1.0f - dj) * a + dj * b) * 0.01f;   // int16 单位 0.01° → 度
+}
+
+/* GPS fix 后周期调用：查表更新磁偏角（节流 10s），变化 >0.2° 才持久化 */
+void mag_auto_update(float lat, float lon) {
+  static uint32_t tLast = 0;
+  uint32_t now = millis();
+  if (now - tLast < MAG_DECL_UPDATE_MS) return;
+  tLast = now;
+
+  float d = mag_auto_decl(lat, lon);
+  if (d < -90.0f || d > 90.0f) return;   // 查表异常保护
+  if (fabsf(d - mag_decl) > MAG_DECL_SAVE_DELTA) {
+    mag_decl = d;
+    mag_save_decl();
+  } else {
+    mag_decl = d;                        // 值几乎没变也同步，但不写 NVS
+  }
+}
+
 /* ---- 读取航向（应用偏移 + 磁偏角）---- */
 void mag_read(float &headingDeg) {
   int16_t mx, my, mz;
   if (!mag_read_raw(mx, my, mz)) { headingDeg = -1.0f; return; }
   float x = (float)mx + mag_x_off;
   float y = (float)my + mag_y_off;
-  float h = atan2f(y, x) * 180.0f / PI + MAG_DECL;
+  float h = atan2f(y, x) * 180.0f / PI + mag_decl;
   if (h < 0) h += 360.0f;
   if (h >= 360.0f) h -= 360.0f;
   headingDeg = h;

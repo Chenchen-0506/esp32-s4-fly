@@ -40,6 +40,7 @@ typedef struct {
   float    home_lat;     // home 纬度
   float    home_lon;     // home 经度
   float    hdg;          // 罗盘航向 deg
+  float    mag_decl;     // 磁偏角（自动识别，度）
   uint16_t mot[4];       // 电机油门 µs
   float    wp_dist;      // 航点剩余距离（米，-1 = 未激活）
 } tel_status_t;
