@@ -76,6 +76,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .c-6{grid-column:span 6;}
 .c-9{grid-column:span 9;}
 .c-12{grid-column:span 12;}
+.c-13{grid-column:span 12;}
 @media(max-width:900px){.c-3,.c-4,.c-6,.c-9{grid-column:span 12;}}
 
 /* ===== 地图 ===== */
@@ -108,7 +109,6 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 
 /* ===== 日志 ===== */
 
-
 .rssirow{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:#94a3b8;}
 #rssiBar{flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;min-width:40px;}
 #rssiFill{display:block;height:100%;width:0;background:#22c55e;border-radius:4px;transition:width .3s;}
@@ -120,22 +120,23 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .chkverdict{margin-top:8px;font-size:14px;font-weight:700;color:#94a3b8;}
 .verdict-ok{color:#4ade80;}.verdict-warn{color:#fbbf24;}.verdict-no{color:#f87171;}
 
-
 .paramtools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;}
 .paramtip{font-size:11px;color:#64748b;}
-.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
+.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
 .prow{display:flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1f2c3d;border-radius:8px;padding:6px 8px;font-size:12px;}
-.pk{color:#7dd3fc;font-family:Consolas,monospace;min-width:110px;}
-.pn{color:#64748b;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pk{color:#7dd3fc;font-size:12px;white-space:nowrap;min-width:70px;}
+.pn{display:none;}
+.pk2{color:#475569;font-family:Consolas,monospace;font-size:10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pv{color:#4ade80;min-width:52px;text-align:right;font-family:Consolas,monospace;}
 .pin{width:72px;background:#0b1220;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:3px 5px;font-size:12px;font-family:Consolas,monospace;}
 .pin:focus{outline:none;border-color:#38bdf8;}
 .paramtools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;}
 .paramtip{font-size:11px;color:#64748b;}
-.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
+.paramgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:6px;margin-top:10px;max-height:340px;overflow:auto;}
 .prow{display:flex;align-items:center;gap:6px;background:#0f172a;border:1px solid #1f2c3d;border-radius:8px;padding:6px 8px;font-size:12px;}
-.pk{color:#7dd3fc;font-family:Consolas,monospace;min-width:110px;}
-.pn{color:#64748b;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pk{color:#7dd3fc;font-size:12px;white-space:nowrap;min-width:70px;}
+.pn{display:none;}
+.pk2{color:#475569;font-family:Consolas,monospace;font-size:10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pv{color:#4ade80;min-width:52px;text-align:right;font-family:Consolas,monospace;}
 .pin{width:72px;background:#0b1220;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:3px 5px;font-size:12px;font-family:Consolas,monospace;}
 .pin:focus{outline:none;border-color:#38bdf8;}
@@ -325,7 +326,6 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="rppars" id="rpPars">--</div>
   </div>
 
-
   <!-- 起飞检查清单 -->
   <div class="card c-12">
     <h3>起飞检查清单（飞行前逐项确认）</h3>
@@ -339,7 +339,6 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="chkverdict" id="chkVerdict">未连接</div>
   </div>
 
-
   <!-- 参数在线调整 -->
   <div class="card c-13">
     <h3>参数在线调整（PARAM：立即生效+NVS保存，无需重烧）</h3>
@@ -351,15 +350,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="paramgrid" id="paramGrid"></div>
   </div>
 
-  <!-- 电机 -->
-
-
-  <!-- 电机 -->
-  <div class="card c-12">
-    <h3>电机油门 M1~M4</h3>
-    <div id="motRows"></div>
-  </div>
-</div>
+  
 
 <div class="logbar">
   <button id="btnLog" class="btn off" onclick="toggleLog()">显示原始数据</button>
@@ -582,14 +573,6 @@ function render(d){
     row.innerHTML='<span class="lbl">'+RC_LBL[i]+'</span>'+barHtml(d.rc[i])+'<span class="val">'+d.rc[i]+'</span>'+fs;
     rcRows.appendChild(row);
   }
-  // 电机
-  var motRows=$('motRows'); motRows.innerHTML='';
-  for(var j=0;j<4;j++){
-    var m=document.createElement('div'); m.className='row';
-    var mp=Math.max(0,Math.min(100,(d.mot[j]-1000)/10));
-    m.innerHTML='<span class="lbl">M'+(j+1)+'</span><div class="bar"><i style="width:'+mp+'%"></i><span class="mid"></span></div><span class="val">'+d.mot[j]+'</span>';
-    motRows.appendChild(m);
-  }
 }
 
 /* ================= 数据流 ================= */
@@ -775,7 +758,6 @@ setInterval(function(){
 },1000);
 
 
-
 /* ================= 起飞检查清单 + 信号 + 声音报警 ================= */
 function chkSet(id, cls, txt){ var e=$(id); e.className='chk '+cls; e.textContent=txt; }
 function chkUpdate(d){
@@ -854,7 +836,6 @@ function alertCheck(){
   if(connected&&dataAge<20) alWarned=false;
 }
 
-
 /* ================= 参数在线调整（PARAM） ================= */
 var PARAM_KEYS=['rate_p_roll','rate_i_roll','rate_d_roll','rate_p_pitch','rate_i_pitch','rate_d_pitch','rate_p_yaw','rate_i_yaw','rate_d_yaw','rate_i_limit','angle_p_roll','angle_p_pitch','angle_p_yaw','alt_p','alt_stick_k','alt_stick_db','alt_vs_max','vel_p','vel_i','thr_i_limit','rtl_alt','rtl_near','rtl_climb_thr','rtl_cruise_thr','rtl_descend_thr','rtl_max_tilt','rtl_pitch_p','rtl_yaw_p','max_tilt_manu','yaw_rate_manu'];
 var PARAM_NAMES={'rate_p_roll':'内环横滚P','rate_i_roll':'内环横滚I','rate_d_roll':'内环横滚D','rate_p_pitch':'内环俯仰P','rate_i_pitch':'内环俯仰I','rate_d_pitch':'内环俯仰D','rate_p_yaw':'内环偏航P','rate_i_yaw':'内环偏航I','rate_d_yaw':'内环偏航D','rate_i_limit':'内环积分限幅','angle_p_roll':'外环横滚P','angle_p_pitch':'外环俯仰P','angle_p_yaw':'外环偏航P','alt_p':'高度→垂速P','alt_stick_k':'油门杆灵敏度','alt_stick_db':'油门杆死区(µs)','alt_vs_max':'垂速限幅(cm/s)','vel_p':'垂速→油门P','vel_i':'垂速积分I','thr_i_limit':'油门积分限幅','rtl_alt':'返航高度(m)','rtl_near':'返航降落距离(m)','rtl_climb_thr':'爬升油门(µs)','rtl_cruise_thr':'巡航油门(µs)','rtl_descend_thr':'缓降油门(µs)','rtl_max_tilt':'返航最大倾角(°)','rtl_pitch_p':'返航前进P','rtl_yaw_p':'返航偏航P','max_tilt_manu':'自稳最大倾角(°)','yaw_rate_manu':'自稳偏航率(°/s)'};
@@ -862,7 +843,7 @@ function paramInit(){
   var g=$('paramGrid'); g.innerHTML='';
   PARAM_KEYS.forEach(function(k){
     var r=document.createElement('div'); r.className='prow';
-    r.innerHTML='<span class="pk">'+k+'</span><span class="pn">'+PARAM_NAMES[k]+'</span>'+
+    r.innerHTML='<span class="pk">'+PARAM_NAMES[k]+'</span><span class="pk2">'+k+'</span>'+
       '<span class="pv" id="pv_'+k+'">--</span>'+
       '<input class="pin" id="pin_'+k+'" type="number" step="any" placeholder="新值">'+
       '<button class="btn" data-k="'+k+'" onclick="paramApply(this)">应用</button>';
