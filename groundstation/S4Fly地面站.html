@@ -107,6 +107,15 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .wplist{font-size:11px;color:#8aa0b8;margin-top:6px;line-height:1.8;font-variant-numeric:tabular-nums;}
 
 /* ===== 日志 ===== */
+
+.rpbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}
+.rpbar .btn{min-width:70px;}
+.rpspd{display:flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;}
+#rpSlider{flex:1;min-width:140px;}
+#rpTime{font-size:12px;color:#94a3b8;white-space:nowrap;}
+.rpstat{margin-top:6px;font-size:12px;color:#64748b;}
+.rppars{margin-top:6px;font-size:12px;color:#94a3b8;line-height:1.8;}
+.rppars b{color:#e2e8f0;}
 .logbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
 .logbar .btn{flex:1;min-width:110px;}
 #log{background:#0a0f16;border:1px solid #1f2c3d;border-radius:10px;padding:8px;margin-top:8px;
@@ -261,6 +270,30 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <div class="wplist" id="wpListRows">航点列表：空</div>
   </div>
 
+
+  <!-- 轨迹回放 -->
+  <div class="card c-12">
+    <h3>飞行轨迹回放（导入 CSV 分析）</h3>
+    <div class="rpbar">
+      <input type="file" id="rpFile" accept=".csv" style="display:none">
+      <button class="btn" onclick="$('rpFile').click()">导入CSV</button>
+      <button class="btn green" id="rpPlay" onclick="rpPlay()">播放</button>
+      <button class="btn off" onclick="rpPause()">暂停</button>
+      <button class="btn off" onclick="rpReset()">重置</button>
+      <span class="rpspd">速度:
+        <button class="srcbtn on" id="spd1" onclick="rpSpeed(1)">1x</button>
+        <button class="srcbtn" id="spd2" onclick="rpSpeed(2)">2x</button>
+        <button class="srcbtn" id="spd4" onclick="rpSpeed(4)">4x</button>
+        <button class="srcbtn" id="spd8" onclick="rpSpeed(8)">8x</button>
+      </span>
+      <input type="range" id="rpSlider" min="0" max="100" value="0" oninput="rpSeek()">
+      <span id="rpTime">-- / --</span>
+    </div>
+    <div class="rpstat" id="rpStat">未导入：先连接数传飞行（或 USB 联调），飞行后点「导出数据(CSV)」得到记录文件，再导入本面板回放轨迹</div>
+    <div class="rppars" id="rpPars">--</div>
+  </div>
+
+  <!-- 电机 -->
   <!-- 电机 -->
   <div class="card c-12">
     <h3>电机油门 M1~M4</h3>
@@ -675,6 +708,137 @@ setInterval(function(){
     if(dataAge>60){ linkDot.className='dot offline'; linkTxt.textContent='无数据，检查数传'; }
   }
 },1000);
+
+
+/* ================= 飞行轨迹回放（CSV 导入） ================= */
+var rpRows=[], rpIdx=0, rpTimer=null, rpSpeed=1, rpPoly=null, rpDoneLine=null, rpDrone=null, rpHomes=null;
+function rpSplitCSV(line){
+  var out=[], cur='', q=false;
+  for(var i=0;i<line.length;i++){
+    var c=line[i];
+    if(q){ if(c==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ out.push(cur); cur=''; }
+    else cur+=c;
+  }
+  out.push(cur); return out;
+}
+function rpModeZh(m){
+  var M={MANU:'手动',POSHOLD:'位置悬停',RTL_CLIMB:'返航爬升',RTL_FLY:'返航直线',RTL_DESC:'返航下降',RTL_LAND:'返航降落',WP_CLIMB:'航点爬升',WP_FLY:'航点飞行',WP_ARRIV:'航点到点',GLIDE:'失控缓降',MAGCAL:'磁校准'};
+  return M[m]||m||'--';
+}
+function rpFmt(sec){
+  sec=Math.max(0,Math.round(sec));
+  var h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+  function p(n){return (n<10?'0':'')+n;}
+  return (h>0?p(h)+':':'')+p(m)+':'+p(s);
+}
+function rpHaversine(a,b,c,d){
+  var R=6371000, rad=Math.PI/180,
+      dLat=(c-a)*rad, dLon=(d-b)*rad,
+      x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a*rad)*Math.cos(c*rad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function rpLoad(){
+  var f=$('rpFile').files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var lines=String(rd.result).split(/\\r?\\n/), rows=[];
+    for(var i=1;i<lines.length;i++){
+      var L=lines[i].trim(); if(!L) continue;
+      var c=rpSplitCSV(L);
+      if(c.length<25) continue;
+      var t=parseFloat(c[0]); if(!isFinite(t)||t<=0) continue;
+      var lat=parseFloat(c[11]), lon=parseFloat(c[12]);
+      if(!isFinite(lat)||!isFinite(lon)||(lat===0&&lon===0)) continue;
+      rows.push({t:t,mode:c[2].replace(/"/g,'').trim(),alt:parseFloat(c[6]),vspd:parseFloat(c[7]),spd:parseFloat(c[8]),fix:parseInt(c[9],10),sats:parseInt(c[10],10),lat:lat,lon:lon,home:parseInt(c[13],10),homeLat:parseFloat(c[14]),homeLon:parseFloat(c[15]),hdg:parseFloat(c[16]),wp:parseFloat(c[18]),wpIndex:parseInt(c[19],10),wpTotal:parseInt(c[20],10),m1:parseInt(c[21],10),m2:parseInt(c[22],10),m3:parseInt(c[23],10),m4:parseInt(c[24],10)});
+    }
+    if(!rows.length){ $('rpStat').textContent='导入失败：没有有效数据行（确认文件是地面站导出的 CSV）'; return; }
+    rpRows=rows; rpIdx=0;
+    if(rpTimer){ clearInterval(rpTimer); rpTimer=null; }
+    $('rpPlay').className='btn green'; $('rpPlay').textContent='播放';
+    $('rpStat').textContent='已导入 '+rows.length+' 条记录，时长 '+rpFmt((rows[rows.length-1].t-rows[0].t)/1000)+'（'+f.name+'）';
+    rpInitLayers();
+    var minLat=1e9,minLon=1e9,maxLat=-1e9,maxLon=-1e9;
+    for(var j=0;j<rows.length;j++){ minLat=Math.min(minLat,rows[j].lat); minLon=Math.min(minLon,rows[j].lon); maxLat=Math.max(maxLat,rows[j].lat); maxLon=Math.max(maxLon,rows[j].lon); }
+    if(mapReady) map.fitBounds([[minLat,minLon],[maxLat,maxLon]],{padding:[40,40]});
+    rpShow(0);
+  };
+  rd.readAsText(f);
+}
+function rpInitLayers(){
+  if(!mapReady) return;
+  if(rpPoly) map.removeLayer(rpPoly);
+  if(rpDoneLine) map.removeLayer(rpDoneLine);
+  if(rpDrone) map.removeLayer(rpDrone);
+  if(rpHomes) map.removeLayer(rpHomes);
+  var all=rpRows.map(function(r){return [r.lat,r.lon];});
+  rpPoly=L.polyline(all,{color:'#64748b',weight:2,dashArray:'6 4'}).addTo(map);
+  rpDoneLine=L.polyline([],{color:'#38bdf8',weight:3}).addTo(map);
+  rpDrone=L.marker([0,0],{icon:L.divIcon({className:'mk-drone',html:'<div class="rparrow"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M11 2 L19 17 L11 12 L3 17 Z" fill="#f59e0b" stroke="#451a03" stroke-width="1"/></svg></div>'})});
+  rpHomes=L.circleMarker([0,0],{radius:6,color:'#ef4444',fillColor:'#ef4444',fillOpacity:.9}).bindTooltip('HOME(回放)');
+  var h=rpRows[0];
+  if(h.home===1&&isFinite(h.homeLat)&&isFinite(h.homeLon)&&(h.homeLat!==0||h.homeLon!==0)){
+    rpHomes.setLatLng([h.homeLat,h.homeLon]).addTo(map);
+  }
+}
+function rpShow(i){
+  var r=rpRows[i]; if(!r) return;
+  if(mapReady){
+    rpDrone.setLatLng([r.lat,r.lon]);
+    var head=document.querySelector('.rparrow');
+    if(head) head.style.transform='rotate('+(isFinite(r.hdg)?r.hdg:0)+'deg)';
+    if(!rpDrone._map) rpDrone.addTo(map);
+    var done=rpRows.slice(0,i+1).map(function(x){return [x.lat,x.lon];});
+    rpDoneLine.setLatLngs(done);
+  }
+  var t0=rpRows[0].t, hd=isFinite(r.hdg)?r.hdg.toFixed(0):'--';
+  $('rpSlider').value=Math.round(i/(rpRows.length-1)*100);
+  $('rpTime').textContent=rpFmt((r.t-t0)/1000)+' / '+rpFmt((rpRows[rpRows.length-1].t-t0)/1000);
+  var dh=(r.home===1&&isFinite(r.homeLat))?rpHaversine(r.lat,r.lon,r.homeLat,r.homeLon).toFixed(0)+'m':'--';
+  $('rpPars').innerHTML=
+    '<b>模式</b> '+rpModeZh(r.mode)+
+    '　<b>高度</b> '+r.alt.toFixed(1)+'m'+
+    '　<b>垂速</b> '+r.vspd.toFixed(1)+'m/s'+
+    '　<b>地速</b> '+r.spd.toFixed(1)+'m/s'+
+    '　<b>航向</b> '+hd+'°'+
+    '　<b>GPS</b> '+(r.fix===1?r.sats+'星':'无定位')+
+    '　<b>距HOME</b> '+dh+
+    '　<b>航点</b> '+(r.wpTotal>0?(r.wpIndex+'/'+r.wpTotal+' · '+r.wp.toFixed(0)+'m'):'--')+
+    '　<b>油门</b> M1:'+r.m1+' M2:'+r.m2+' M3:'+r.m3+' M4:'+r.m4;
+}
+function rpStep(){
+  rpIdx+=rpSpeed;
+  if(rpIdx>=rpRows.length){ rpIdx=rpRows.length-1; rpPause(); return; }
+  rpShow(rpIdx);
+}
+window.rpPlay=function(){
+  if(!rpRows.length){ alert('请先导入 CSV'); return; }
+  if(rpIdx>=rpRows.length-1) rpIdx=0;
+  if(rpTimer){ clearInterval(rpTimer); }
+  rpTimer=setInterval(rpStep,100);
+  $('rpPlay').className='btn green'; $('rpPlay').textContent='播放中';
+};
+window.rpPause=function(){
+  if(rpTimer){ clearInterval(rpTimer); rpTimer=null; }
+  $('rpPlay').className='btn green'; $('rpPlay').textContent='播放';
+};
+window.rpReset=function(){
+  rpPause();
+  if(!rpRows.length) return;
+  rpIdx=0; rpShow(0);
+};
+window.rpSpeed=function(v){
+  rpSpeed=v;
+  var b=['spd1','spd2','spd4','spd8'];
+  for(var i=0;i<4;i++) $('spd'+Math.pow(2,i)).className=(Math.pow(2,i)===v)?'srcbtn on':'srcbtn';
+};
+window.rpSeek=function(){
+  if(!rpRows.length) return;
+  var i=Math.round($('rpSlider').value/100*(rpRows.length-1));
+  rpIdx=i; rpShow(i);
+};
+$('rpFile').addEventListener('change',rpLoad);
 
 /* 初始化地图（等 Leaflet 就绪） */
 if(window.L){ initMap(); }
