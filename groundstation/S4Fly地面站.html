@@ -631,6 +631,7 @@ window.connToggle=async function(){
     reader=port.readable.getReader();
     readLoop();
     if(port.writable){ writer=port.writable.getWriter(); }
+    setTimeout(function(){ try{ paramGet(); }catch(e){} }, 600);   // 连接后自动读取参数当前值
   }catch(e){
     if(e.name==='NotFoundError') return;   // 用户取消选择
     linkTxt.textContent='连接失败：'+e.message; linkTxt.style.color='#f87171';
