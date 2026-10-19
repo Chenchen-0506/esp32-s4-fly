@@ -637,7 +637,7 @@ window.togglePause=function(){ paused=!paused; $('btnPause').textContent=paused?
 /* 导出飞行数据为 CSV（数传网页记录，飞行后打包分析） */
 window.exportData=function(){
   if(!dataLog.length){ alert('暂无记录数据：连接并飞行后遥测自动记录，上限 20000 条'); return; }
-  var HDR=['t','armed','mode','roll','pitch','yaw','alt','vspd','spd','fix','sats','lat','lon','home','homeLat','homeLon','hdg','wp','wpIndex','wpTotal','m1','m2','m3','m4'];
+  var HDR=['t','armed','mode','roll','pitch','yaw','alt','vspd','spd','fix','sats','lat','lon','home','homeLat','homeLon','hdg','magDecl','wp','wpIndex','wpTotal','m1','m2','m3','m4'];
   var lines=[HDR.join(',')];
   for(var i=0;i<dataLog.length;i++){
     var d=null; try{ d=JSON.parse(dataLog[i]); }catch(e){ continue; }
