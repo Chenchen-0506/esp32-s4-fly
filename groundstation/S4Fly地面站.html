@@ -62,6 +62,9 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .row{display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:4px;}
 .row .lbl{width:34px;color:#8aa0b8;font-weight:600;flex:none;}
 .row .val{width:46px;text-align:right;font-variant-numeric:tabular-nums;color:#7dd3fc;flex:none;}
+.row .rcfs{font-size:10px;color:#94a3b8;margin-left:auto;flex:none;}
+.rchint{font-size:10px;color:#94a3b8;margin:-2px 0 6px;line-height:1.5;}
+.rchint b{color:#fbbf24;}
 .bar{flex:1;height:8px;background:#0b111a;border-radius:4px;position:relative;}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#2563eb;}
 .bar .mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#64748b;}
@@ -235,7 +238,8 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 
   <!-- RC -->
   <div class="card c-3">
-    <h3>遥控通道 CH1~CH7</h3>
+    <h3>遥控通道 CH1~CH7（CH5/CH6 功能）</h3>
+    <div class="rchint"><b>CH5</b> 油门最低 + 拨高2秒解锁 / 拨低上锁　<b>CH6</b> 未解锁拨高3秒磁校准 / 解锁拨高手动返航</div>
     <div id="rcRows"></div>
   </div>
 
@@ -287,7 +291,7 @@ var lastT=0, dataAge=0;
 var lastJsonStr='';    // 最新一行遥测 JSON（共享用）
 var dataLog=[];         // 遥测记录（原始 JSON 行，飞行数据用于分析）
 var DATA_LOG_MAX=20000; // 内存上限（10Hz ≈ 33 分钟）
-var RC_LBL=['ROLL','PITCH','THR','YAW','ARM','RTL','POS'];
+var RC_LBL=['ROLL','PITCH','THR','YAW','解锁','返航','定高'];
 var DIRS=['N','NE','E','SE','S','SW','W','NW'];
 
 /* ================= DOM ================= */
@@ -477,7 +481,11 @@ function render(d){
   var rcRows=$('rcRows'); rcRows.innerHTML='';
   for(var i=0;i<7;i++){
     var row=document.createElement('div'); row.className='row';
-    row.innerHTML='<span class="lbl">'+RC_LBL[i]+'</span>'+barHtml(d.rc[i])+'<span class="val">'+d.rc[i]+'</span>';
+    var fs='';
+    if(i===4){ fs=d.armed?'<span class="rcfs" style="color:#4ade80;">解锁生效</span>':'<span class="rcfs">上锁 · 拨高2秒解锁</span>'; }
+    else if(i===5){ fs=d.rc[i]>=1500?'<span class="rcfs" style="color:#fbbf24;">拨高·返航/磁校准</span>':'<span class="rcfs">待命 · 拨高触发</span>'; }
+    else if(i===6){ fs=d.rc[i]>=1500?'<span class="rcfs" style="color:#7dd3fc;">拨高·定高/悬停</span>':'<span class="rcfs">待命 · 拨高触发</span>'; }
+    row.innerHTML='<span class="lbl">'+RC_LBL[i]+'</span>'+barHtml(d.rc[i])+'<span class="val">'+d.rc[i]+'</span>'+fs;
     rcRows.appendChild(row);
   }
   // 电机
