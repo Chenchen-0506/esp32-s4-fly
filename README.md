@@ -4,7 +4,7 @@
 
 ## 硬件（450mm X 型大机）
 
-> 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.21，含数传引脚与可更换说明）
+> 完整硬件清单与引脚分配说明见 **[HARDWARE.md](HARDWARE.md)**（v0.22，含数传引脚与可更换说明、磁偏角自动识别）
 
 - 主控：ESP32-S3 DevKitC N16R8（SPI：ICM-20948 / I2C：BMP280 + 罗盘 / UART：BN-880 GPS / iBus：GPIO18（FS-iA6B 接收机））
 - 动力：2212 KV920 ×4 + 30A BLHeli 电调 ×4 + 1045 桨 + 4S 3000mAh
@@ -37,17 +37,19 @@ M6_full_flight/
     ├── ICM20948.h/.cpp       # 九轴 IMU 驱动（SPI）+ Mahony 姿态 + 零偏校准
     ├── BMP280.h/.cpp         # 气压计驱动（I2C）+ 相对高度
     ├── GPS.h/.cpp            # BN-880 NMEA 解析（定位/卫星/经纬度）
-    ├── MAG.h/.cpp            # BN-880 内置罗盘（航向读取 + 自动磁校准 NVS）
+    ├── MAG.h/.cpp            # BN-880 内置罗盘（航向读取 + 自动磁校准 + 磁偏角自动识别）
     ├── RTL.h/.cpp            # 返航状态机（手动/失控自动返航）
     ├── SBUS.h/.cpp           # 遥控接收解析（iBus/FS-iA6B，兼容旧接口）
     ├── PID.h/.cpp            # 串级 PID 控制器
     ├── Motors.h/.cpp         # 4 路电机 PWM 输出
     ├── ALTHOLD.h/.cpp        # 定高 + 悬停（CH7）
+    ├── WAYPOINT.h/.cpp       # 多航点航线（最多 8 点，逐点爬升+飞抵）
     ├── POSHOLD.h/.cpp        # 位置保持（GPS 悬停，参考 ArduPilot Loiter）
     ├── VERTEST.h/.cpp        # 垂直融合（1D 互补：加速度预测 1kHz + 气压修正 10Hz）
     ├── LOGGER.h/.cpp         # 黑匣子（RAM 环形 512 行 + LittleFS 落盘，串口 D 导出）
-    └── TELEMETRY.h/.cpp      # WiFi 仪表盘（softAP 热点，姿态/高度/航向/GPS/RC/电机）
-    ├── LINK.h/.cpp         # 433MHz 数传链路（UART1：10Hz 遥测上行 + WP/D 命令下行）
+    ├── TELEMETRY.h/.cpp      # WiFi 仪表盘（softAP 热点，姿态/高度/航向/GPS/RC/电机）
+    ├── LINK.h/.cpp            # 433MHz 数传链路（UART1：10Hz 遥测上行 + WP/D 命令下行）
+    └── MAG_DECL_TABLE.h      # 磁偏角全球查表（NOAA WMM，10° 网格）
 ```
 
 ## 功能总览（v0.21）
@@ -72,14 +74,15 @@ M6_full_flight/
 | 自动飞行 | 多航点航线飞行（最多 8 点，逐点爬升+飞抵，飞完悬停） | v0.15~v0.17 |
 | 自动飞行 | 自绘俯视航图（home 中心雷达图，无需外网） | v0.17 |
 | 安全 | CH5 解锁/上锁（油门最低 2s） | v0.4 |
-| 安全 | 失控保护分级（有定位→返航 / 无定位→强制上锁） | v0.6 |
+| 安全 | 失控保护分级（有定位→返航 / 无定位→怠速缓降触地上锁） | v0.6~v0.19.1 |
 | 安全 | 返航优先级最高（RTL>航线>手动，降落段禁止退出） | v0.15 |
 | 安全 | 摇杆偏离中位立即接管（自动飞行可随时打断） | v0.15 |
 | 数据 | 黑匣子 LOGGER（512 行环形缓冲，60s 落盘，串口 D 导出） | v0.11 |
-| 数据 | WiFi 实时仪表盘（热点 S4Fly-Telemetry，姿态球/高度/航向/GPS/通道/电机） | v0.13 |
+| 数据 | WiFi 实时仪表盘（热点 S4Fly-Telemetry，姿态球/高度/航向/GPS/通道/电机；过渡方案，数传稳定后删） | v0.13 |
+| 数据 | 433MHz 数传链路 LINK（10Hz 遥测上行 + WP/D 命令下行，USB 同路输出） | v0.19 |
 | 数据 | 数传网页记录 + CSV 导出（电脑/手机地面站，遥测含 vspd/spd 速度） | v0.20 |
 | 工具 | 电调校准 M4_esc_test（四路同时校准/测试） | v0.13 |
-| 工程 | 模块化 src/（15 模块）+ GitHub 开源（17 个版本标签回档） | v0.1~v0.17 |
+| 工程 | 模块化 src/（15 功能模块 + WMM 查表）+ GitHub 开源（23 个版本标签回档） | v0.1~v0.21 |
 
 ### 功能明细（由下而上按模块说明）
 
@@ -92,7 +95,7 @@ M6_full_flight/
 ### 返航（CH6 手动 / 失控自动，120m 巡航）
 
 - **CH6 拨高**：进入手动返航（需 GPS 定位 + home 已记录，否则拒绝并提示）
-- **遥控丢失**（iBus >1 秒无帧）：自动返航；**无 GPS 定位时直接强制上锁**（安全兜底）
+- **遥控丢失**（iBus >1 秒无帧）：自动返航；**无 GPS 定位时进入怠速缓降**（GLIDE：油门 1150 缓慢降落，触地或 15s 超时自动上锁，v0.19.1）
 - 返航流程：爬升到 **120m**（RTL_ALT）→ 机头对准 home 飞行（罗盘航向 + 距离 P 控制）→ 距 home <5m（RTL_NEAR）缓降 → 触地自动上锁
 - 手动返航在爬升/飞行阶段可拨低 CH6 退出；降落阶段禁止退出（防悬空）
 - 失控触发的返航不可中途退出；**已进入降落段时失控不打断，继续降落（禁止重爬 120m）**
@@ -110,7 +113,7 @@ M6_full_flight/
 - 未解锁 + 油门最低 + **CH6 拨高 3 秒** → 进入自动校准模式
 - 水平端平机身，慢速旋转整机 2~3 圈 + 8 字，**30 秒自动完成**（或拨低 CH6 提前结束）
 - 校准值自动存入 ESP32 NVS（掉电不丢），下次开机自动加载
-- 磁偏角查表：默认 `MAG_DECL=-2.5°`（桂林），其他地区修改 `src/MAG.h`
+- **磁偏角自动识别**（v0.21）：内置 NOAA WMM 全球查表（`src/MAG_DECL_TABLE.h`，10° 网格 + 双线性内插），GPS 定位后自动按经纬度更新（10s 节流，变化 >0.2° 写 NVS），去哪飞都不用改；无 GPS 时用上次保存值。遥测 `magDecl` 字段可查看当前值
 
 ### 黑匣子（LOGGER，v0.11）
 
@@ -147,7 +150,7 @@ M6_full_flight/
 - 手机连热点 → 浏览器打开 **`http://192.168.4.1`**：姿态球 + 高度/航向/GPS/遥控通道/电机油门仪表（500ms 刷新），日志滚动可下载
 - 完全无需 USB，适合外场悬停/试飞观测
 
-### 433MHz 数传链路（LINK，v0.18 新增）
+### 433MHz 数传链路（LINK，v0.19 落地）
 
 - **接线**（机载）：主控 `GPIO14(TX)` → 机载数传模块 RX；主控 `GPIO15(RX)` ← 机载数传模块 TX；数传 5V/GND 供电（与分电板 UBEC 同源）
 - **波特率**：`57600` 8N1（UART1，引脚宏在 `src/LINK.h`，与地面端默认一致）
@@ -214,7 +217,18 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 "M6_full_flight"
   - `v0.11-blackbox-wifi`：黑匣子（LOGGER）+ WiFi 看板（TELEMETRY）
   - `v0.12-selfcheck-fix`：代码自检修复（加速度量程 bug / 失控降落保护 / 解锁重定高 / 磁校准节流）
   - `v0.13-ibus-dashboard`：遥控接收 SBUS→iBus（FS-iA6B 适配）；WiFi 看板升级为仪表盘（/api JSON，姿态球/高度/航向/GPS/RC/电机）
+  - `v0.14-hardware-doc`：硬件文档（HARDWARE.md 引脚/清单）
+  - `v0.15-waypoint`：单航点直飞
+  - `v0.16-home-telemetry`：home 自动记录 + 仪表盘坐标显示
+  - `v0.17-multi-waypoint`：多航点航线（最多 8 点，飞完悬停不返航）
+  - `v0.18-selfcheck-opt`：代码自检优化
+  - `v0.18.1-gs-maps-share`：地面站地图（高德+Esri）+ 局域网共享
+  - `v0.19-link-telemetry`：433MHz 数传链路（UART1 57600，10Hz 遥测 + WP/D 命令）
+  - `v0.19.1-failsafe-glide`：无 GPS 失控怠速缓降（替代直接上锁）
+  - `v0.20-telemetry-record`：遥测加 vspd/spd + 地面站网页记录 CSV 导出
+  - `v0.20.1-code-cleanup`：代码自检清理 + 航点命令大小写修复
   - `v0.21-mag-auto-decl`：磁偏角自动识别（NOAA WMM 全球查表 + 双线性内插，GPS 定位后自动更新并持久化）
+- 注：v0.2/v0.3 未单独打 tag（并入 v0.4-M7 前后历史提交）
 - 回档命令：`git checkout v0.1-M6-modular`
 - 提交信息规范：`vX.Y <阶段>：<做了什么>`，中文描述
 
