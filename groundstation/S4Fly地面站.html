@@ -45,6 +45,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
 .badge.st-wp{background:#2563eb;color:#fff;}
 .badge.st-pos{background:#0891b2;color:#fff;}
 .badge.st-glide{background:#991b1b;color:#fff;}
+.badge.st-unk{background:#475569;color:#fff;}
 
 /* ===== 主网格 ===== */
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;}
@@ -141,7 +142,7 @@ select{background:#141c26;border:1px solid #26354a;color:#dbe4f0;border-radius:8
     <button id="btnConn" class="btn" onclick="connToggle()">连接串口</button>
     <span id="linkDot" class="dot offline"></span><span id="linkTxt" style="font-size:12px;color:#94a3b8;">等待数据</span>
     <span id="armDot" class="dot offline"></span><span id="armTxt" style="font-size:12px;color:#94a3b8;">上锁</span>
-    <span id="stateBadge" class="badge st st-wait">--</span>
+    <span id="stateBadge" class="badge st st-unk">未连接</span>
     <span id="modeBadge" class="badge">MANU</span>
     <button id="btnShare" class="btn off" onclick="toggleShare()">共享到手机</button>
     <span id="shareTxt" style="font-size:11px;color:#fbbf24;max-width:300px;"></span>
@@ -416,7 +417,7 @@ function render(d){
   modeB.textContent=d.mode;
   modeB.className='badge'+(d.mode.indexOf('RTL')===0?' rtl':(d.mode==='POSHOLD'?' pos':(d.armed?'armed':'')));
   // 中文组合状态（armed + mode + GPS）
-  var st={text:'--',cls:'st-wait'};
+  var st={text:'未连接',cls:'st-unk'};
   var m=(d.mode||'').trim();
   if(m==='MAGCAL'){st={text:'磁校准中',cls:'st-mag'};}
   else if(m.indexOf('RTL')===0){var sub={0:'爬升中',1:'直线返航',2:'下降降落',3:'已降落'}[Math.max(0,Math.min(3,parseInt((m.split('-')[1]||'0').replace('CLIMB','0').replace('FLY','1').replace('DESC','2').replace('LAND','3'),10)||0))]||'返航中';st={text:'返航中 '+sub,cls:'st-rtl'};}
